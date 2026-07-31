@@ -1,6 +1,10 @@
 /* Fighter runtime state factories — shared shape for the player Stand and
    any enemy/boss, so combat.js can treat both generically. */
 
+/* Step/dodge charges (GDD §3.7): a hard cap on invulnerability uptime,
+   replacing the old "hold to stay safe" exploit (tech audit item #1). */
+export const DODGE_CHARGE_MAX = 2;
+
 export function createPlayerFighter(stand, x, runBuffs) {
   const powerMult = runBuffs.reduce((m, b) => m * (b.powerMult || 1), 1);
   const speedMult = runBuffs.reduce((m, b) => m * (b.speedMult || 1), 1);
@@ -12,6 +16,8 @@ export function createPlayerFighter(stand, x, runBuffs) {
     powerMult, speedMult,
     state: 'idle', stateTimer: 0, activeMove: null, hitTargetsThisSwing: null,
     invulnerable: false, parryWindow: false, parrySuccess: false,
+    dodgeCharges: DODGE_CHARGE_MAX, dodgeRechargeMs: 0,
+    bufferedAction: null,
     squash: 0, hurtFlash: 0, comboCount: 0, moving: false
   };
 }

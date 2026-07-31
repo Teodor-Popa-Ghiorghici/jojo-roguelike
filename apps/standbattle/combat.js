@@ -7,14 +7,18 @@
 
 import { MOVES, STANDS } from './data.js';
 import { PATTERNS, createEnemyAI, stepEnemyAI, defaultApproachRange } from './ai.js';
-import { createPlayerFighter, createEnemyFighter, applyDamage, clampPersistence } from './fighter.js';
+import { createPlayerFighter, createEnemyFighter, applyDamage, clampPersistence, DODGE_CHARGE_MAX } from './fighter.js';
 import { createDispatcher } from './hooks.js';
 import { createJuice } from './juice.js';
+import { ARENA_MIN, ARENA_MAX } from './arena_bounds.js';
 
-const ARENA_MIN = 58, ARENA_MAX = 542;
 const DODGE_MS = 260, DODGE_IFRAME_MS = 200, PARRY_MS = 200;
+const DODGE_RECHARGE_MS = 1400; // GDD §3.7: 2 charges, 1.4s recharge each
 const PLAYER_SPEED = 172;
 const DEATH_ANIM_MS = 900;
+const INPUT_BUFFER_MS = 150; // ~9 frames @60Hz, spec §3.6 -- inputs made
+                              // during recovery/windup are queued, not dropped
+const ACTION_KEYS = new Set(['light', 'medium', 'heavy', 'special', 'rush', 'dodge', 'parry']);
 
 export function createCombat(enemyDef, runBuffs, opts) {
   opts = opts || {};
@@ -35,7 +39,23 @@ export function createCombat(enemyDef, runBuffs, opts) {
 
   function push(msg) { combat.log.unshift(msg); combat.log.length = Math.min(4, combat.log.length); }
 
-  combat.setKey = (code, down) => { keys[code] = down; };
+  function performAction(kind) {
+    if (kind === 'dodge') startDodge();
+    else if (kind === 'parry') startParry();
+    else tryAttack(kind);
+  }
+
+  /* Edge-triggered: an action fires once per physical key-down, never on
+     hold (tech audit item #1 -- dodge used to re-fire every frame it was
+     held). A press made while busy is buffered instead of dropped (item #2). */
+  combat.setKey = (code, down) => {
+    const was = keys[code];
+    keys[code] = down;
+    if (down && !was && ACTION_KEYS.has(code)) {
+      if (player.state === 'idle') performAction(code);
+      else player.bufferedAction = { kind: code, timer: INPUT_BUFFER_MS };
+    }
+  };
 
   function startPlayerMove(move) {
     player.state = 'attack';
@@ -56,10 +76,31 @@ export function createCombat(enemyDef, runBuffs, opts) {
 
   function startDodge() {
     if (player.state !== 'idle') return;
+    if (player.dodgeCharges <= 0) { dispatcher.fire('onMoveDenied', {}); return; }
+    player.dodgeCharges--;
     player.state = 'dodge';
     player.stateTimer = DODGE_MS;
     player.invulnerable = true;
     player.dodgeDir = enemy.x > player.x ? -1 : 1;
+  }
+
+  function updateDodgeCharges(dt) {
+    if (player.dodgeCharges < DODGE_CHARGE_MAX) {
+      player.dodgeRechargeMs += dt;
+      if (player.dodgeRechargeMs >= DODGE_RECHARGE_MS) {
+        player.dodgeRechargeMs -= DODGE_RECHARGE_MS;
+        player.dodgeCharges++;
+      }
+    } else {
+      player.dodgeRechargeMs = 0;
+    }
+  }
+
+  function tryConsumeBuffer() {
+    if (!player.bufferedAction) return;
+    const kind = player.bufferedAction.kind;
+    player.bufferedAction = null;
+    if (player.state === 'idle') performAction(kind);
   }
   function startParry() {
     if (player.state !== 'idle') return;
@@ -124,7 +165,7 @@ export function createCombat(enemyDef, runBuffs, opts) {
       }
       return;
     }
-    const dmg = pattern.dmgMult * enemyDef.power * 2 * (opts.hpMult ? 1 : 1);
+    const dmg = pattern.dmgMult * enemyDef.power * 2;
     const dead = applyDamage(player, dmg);
     player.knockVx = (player.x >= atX ? 1 : -1) * pattern.knockback;
     player.comboCount = 0;
@@ -144,6 +185,11 @@ export function createCombat(enemyDef, runBuffs, opts) {
     if (player.knockVx) { player.x += player.knockVx; player.knockVx *= 0.8; if (Math.abs(player.knockVx) < 0.3) player.knockVx = 0; }
     player.x = Math.max(ARENA_MIN, Math.min(ARENA_MAX, player.x));
     player.facing = enemy.x >= player.x ? 1 : -1;
+    updateDodgeCharges(dt);
+    if (player.bufferedAction) {
+      player.bufferedAction.timer -= dt;
+      if (player.bufferedAction.timer <= 0) player.bufferedAction = null;
+    }
 
     if (player.state === 'idle') {
       let mv = 0;
@@ -151,13 +197,6 @@ export function createCombat(enemyDef, runBuffs, opts) {
       if (keys.right) mv += 1;
       player.moving = mv !== 0;
       player.x = Math.max(ARENA_MIN, Math.min(ARENA_MAX, player.x + mv * PLAYER_SPEED * player.speedMult * dt / 1000));
-      if (keys.light) tryAttack('light');
-      else if (keys.medium) tryAttack('medium');
-      else if (keys.heavy) tryAttack('heavy');
-      else if (keys.special) tryAttack('special');
-      else if (keys.rush) tryAttack('rush');
-      else if (keys.dodge) startDodge();
-      else if (keys.parry) startParry();
       return;
     }
     player.stateTimer -= dt;
@@ -170,13 +209,17 @@ export function createCombat(enemyDef, runBuffs, opts) {
         if (player.stateTimer <= 0) { player.movePhase = 'recover'; player.stateTimer = m.recoverMs; }
       } else if (player.movePhase === 'recover' && player.stateTimer <= 0) {
         player.state = 'idle'; player.activeMove = null;
+        tryConsumeBuffer();
       }
     } else if (player.state === 'dodge') {
       if (DODGE_MS - player.stateTimer < DODGE_IFRAME_MS) {
         player.x = Math.max(ARENA_MIN, Math.min(ARENA_MAX, player.x + player.dodgeDir * PLAYER_SPEED * 1.6 * dt / 1000));
       }
       if (DODGE_MS - player.stateTimer >= DODGE_IFRAME_MS) player.invulnerable = false;
-      if (player.stateTimer <= 0) { player.state = 'idle'; player.invulnerable = false; }
+      if (player.stateTimer <= 0) {
+        player.state = 'idle'; player.invulnerable = false;
+        tryConsumeBuffer();
+      }
     } else if (player.state === 'parry') {
       if (player.parryWindow && player.stateTimer <= 0) {
         // window closed with no incoming hit -- a whiffed parry earns a
@@ -185,9 +228,13 @@ export function createCombat(enemyDef, runBuffs, opts) {
         player.stateTimer = 150;
       } else if (!player.parryWindow && player.stateTimer <= 0) {
         player.state = 'idle'; player.parrySuccess = false;
+        tryConsumeBuffer();
       }
     } else if (player.state === 'hitstun') {
-      if (player.stateTimer <= 0) player.state = 'idle';
+      if (player.stateTimer <= 0) {
+        player.state = 'idle';
+        tryConsumeBuffer();
+      }
     }
   }
 

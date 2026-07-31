@@ -5,6 +5,7 @@
 import { px, poly, disc, line } from './draw.js';
 import { text, textWidth } from './font.js';
 import { FX, JOTARO, THUG, ANGELO, KQ, S, SH, BASE, LT, RIM } from './palette.js';
+import { DODGE_CHARGE_MAX } from './fighter.js';
 
 const ghosts = new WeakMap();
 
@@ -80,6 +81,15 @@ export function drawHUD(g, W, H, combat, tsec) {
   bar(g, 40, 30, 112, 6, player.persistence / player.maxPersistence, 0,
     ['#0B2E4A', '#12587E', '#1E93B8', '#4FD0E6', '#C4F6FF']);
   text(g, 'PERSISTENCE', 158, 30, { scale: 1, color: '#5FA8C8' });
+
+  /* dodge charges (§3.7): 2 pips so "holding to stay safe" has a visible
+     cost again -- direct feedback for tech audit item #1's fix */
+  for (let i = 0; i < DODGE_CHARGE_MAX; i++) {
+    const on = i < player.dodgeCharges;
+    px(g, 40 + i * 10, 40, 7, 5, on ? '#5FE0FF' : '#1A3040');
+    px(g, 40 + i * 10, 40, 7, 2, on ? '#C8F8FF' : '#243C48');
+  }
+  text(g, 'STEP', 64, 40, { scale: 1, color: '#5FA8C8' });
 
   if (enemy.hp > 0 || (enemy.deathTimer || 0) > 0) {
     const name = enemy.def.standName || enemy.def.name;
