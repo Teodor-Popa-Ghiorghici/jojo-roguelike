@@ -25,32 +25,38 @@ export const STANDS = {
   }
 };
 
-/* Move definitions. Timings are milliseconds; hitstopMs follows §10
-   (3-5 frames light ~= 50-83ms, up to 8 frames ~= 133ms on heavies/rush). */
+/* Move definitions. windup/active/recover are whole frames at the sim's
+   fixed 60Hz step (tech §5 Phase 1: "convert all remaining ms-based
+   timing to frames") -- the ms figures in each comment are the pre-Phase-1
+   authored values, kept only so the numbers are traceable. hitstopMs stays
+   milliseconds: hit-stop is driven by juice.js, which is deliberately left
+   on the real-time render clock (§10; see the Phase 1 report for why),
+   following §10 (3-5 frames light ~= 50-83ms, up to 8 frames ~= 133ms on
+   heavies/rush). */
 export const MOVES = {
   sp_light: {
     id: 'sp_light', type: 'light', persistenceCost: 0, persistenceGain: 5,
-    windupMs: 50, activeMs: 90, recoverMs: 130, range: 62,
+    windupFrames: 3, activeFrames: 5, recoverFrames: 8, range: 62, // 50/90/130ms
     hitCount: 1, damage: 4, knockback: 9, hitstopMs: 55, label: 'JAB'
   },
   sp_medium: {
     id: 'sp_medium', type: 'medium', persistenceCost: 0, persistenceGain: 8,
-    windupMs: 110, activeMs: 110, recoverMs: 190, range: 68,
+    windupFrames: 7, activeFrames: 7, recoverFrames: 11, range: 68, // 110/110/190ms
     hitCount: 1, damage: 8, knockback: 16, hitstopMs: 70, label: 'STRIKE'
   },
   sp_heavy: {
     id: 'sp_heavy', type: 'heavy', persistenceCost: 0, persistenceGain: 12,
-    windupMs: 230, activeMs: 130, recoverMs: 340, range: 76,
+    windupFrames: 14, activeFrames: 8, recoverFrames: 20, range: 76, // 230/130/340ms
     hitCount: 1, damage: 15, knockback: 28, hitstopMs: 110, label: 'HEAVY'
   },
   sp_barrage: {
     id: 'sp_barrage', type: 'special', persistenceCost: 35, persistenceGain: 0,
-    windupMs: 90, activeMs: 260, recoverMs: 220, range: 66,
+    windupFrames: 5, activeFrames: 16, recoverFrames: 13, range: 66, // 90/260/220ms
     hitCount: 4, damage: 4, knockback: 5, hitstopMs: 45, label: 'ORA BARRAGE'
   },
   sp_ora_rush: {
     id: 'sp_ora_rush', type: 'rush', persistenceCost: 80, persistenceGain: 0,
-    windupMs: 140, activeMs: 620, recoverMs: 300, range: 78,
+    windupFrames: 8, activeFrames: 37, recoverFrames: 18, range: 78, // 140/620/300ms
     hitCount: 9, damage: 5, knockback: 4, hitstopMs: 130, label: 'ORA ORA ORA!'
   }
 };

@@ -12,7 +12,7 @@ const REACH = { light: 0.92, medium: 1, heavy: 1.12, special: 0.95, rush: 1 };
 
 function phaseT(player) {
   const m = player.activeMove;
-  const total = player.movePhase === 'windup' ? m.windupMs : player.movePhase === 'active' ? m.activeMs : m.recoverMs;
+  const total = player.movePhase === 'windup' ? m.windupFrames : player.movePhase === 'active' ? m.activeFrames : m.recoverFrames;
   return 1 - Math.max(0, player.stateTimer) / Math.max(1, total);
 }
 
@@ -112,8 +112,8 @@ export function playerPose(player, tsec, dtMs, outcome) {
       pose.standOut = Math.min(1, (player.movePhase === 'windup' ? t * 1.4 : 1));
       pose.aura = 1;
       if (player.movePhase === 'active') {
-        const hitEvery = m.activeMs / m.hitCount;
-        const elapsed = m.activeMs - Math.max(0, player.stateTimer);
+        const hitEvery = m.activeFrames / m.hitCount;
+        const elapsed = m.activeFrames - Math.max(0, player.stateTimer);
         const beat = elapsed / hitEvery;
         const swing = beat % 1;
         const alt = Math.floor(beat) % 2 === 0 ? 1 : -1;

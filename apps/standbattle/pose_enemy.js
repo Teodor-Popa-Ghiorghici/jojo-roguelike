@@ -10,6 +10,7 @@ import {
   animState, basePose, tick, ease,
   applyIdle, applyWalk, applyDeath
 } from './anim.js';
+import { DEATH_ANIM_FRAMES } from './constants.js';
 
 function windupPose(pose, id, k) {
   pose.telegraph = k;
@@ -127,7 +128,7 @@ export function enemyPose(enemy, tsec, dtMs) {
 
   if (enemy.hp <= 0) {
     pose.action = 'dead';
-    const t = 1 - Math.max(0, enemy.deathTimer || 0) / 900;
+    const t = 1 - Math.max(0, enemy.deathTimer || 0) / DEATH_ANIM_FRAMES;
     applyDeath(pose, Math.min(1, t));
     pose.flash = enemy.hurtFlash || 0;
     tick(enemy, s, dtMs, pose, 1);
@@ -137,16 +138,16 @@ export function enemyPose(enemy, tsec, dtMs) {
   const hurt = enemy.hurtFlash || 0;
   if (ai && ai.state === 'windup' && ai.pattern) {
     pose.action = 'windup';
-    const k = ease.outCubic(1 - Math.max(0, ai.timer) / ai.pattern.windupMs);
+    const k = ease.outCubic(1 - Math.max(0, ai.timer) / ai.pattern.windupFrames);
     windupPose(pose, ai.pattern.id, k);
     pose.pattern = ai.pattern.id;
   } else if (ai && ai.state === 'active' && ai.pattern) {
     pose.action = 'active';
-    activePose(pose, ai.pattern.id, 1 - Math.max(0, ai.timer) / ai.pattern.activeMs);
+    activePose(pose, ai.pattern.id, 1 - Math.max(0, ai.timer) / ai.pattern.activeFrames);
     pose.pattern = ai.pattern.id;
   } else if (ai && ai.state === 'recover' && ai.pattern) {
     pose.action = 'recover';
-    recoverPose(pose, 1 - Math.max(0, ai.timer) / ai.pattern.recoverMs, pose.breath);
+    recoverPose(pose, 1 - Math.max(0, ai.timer) / ai.pattern.recoverFrames, pose.breath);
   } else if (enemy.moving) {
     pose.action = 'walk';
     s.prevGait = (s.prevGait + dtMs / 1000 * 2.9) % 1;

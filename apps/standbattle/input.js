@@ -15,12 +15,17 @@
 
 export const DEFAULT_KEYMAP = {
   ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
+  ArrowUp: 'forward', KeyW: 'forward', ArrowDown: 'back', KeyS: 'back',
   KeyJ: 'light', KeyK: 'medium', KeyL: 'heavy',
   Space: 'dodge', ShiftLeft: 'parry', ShiftRight: 'parry',
   KeyU: 'special', KeyI: 'rush'
 };
 
-export const HELD_ACTIONS = new Set(['left', 'right']);
+/* forward/back (tech §5 Phase 1) move on the belt plane's z (depth) axis
+   exactly like left/right move on x -- held-triggered locomotion, not an
+   attack, so it goes through the same edge/held split as movement always
+   has rather than needing a new kind of input. */
+export const HELD_ACTIONS = new Set(['left', 'right', 'forward', 'back']);
 export const EDGE_ACTIONS = new Set(['light', 'medium', 'heavy', 'special', 'rush', 'dodge', 'parry']);
 
 const RING_SIZE = 64;

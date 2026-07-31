@@ -21,6 +21,7 @@ import { sceneEvents, telegraph, projectiles, particles, groundDust } from './ar
 import { text } from './font.js';
 import { FX, JOTARO, S, SH, BASE, LT, RIM } from './palette.js';
 import { WORLD_W, GROUND_Y } from './constants.js';
+import { zToYOffset, depthSort, cameraTargetX } from './render_adapter.js';
 
 export { WORLD_W, GROUND_Y };
 
@@ -38,8 +39,11 @@ const SCENE_LIGHT = {
   store: { color: '#CFE0FF', alpha: 0.38 }
 };
 
+/* Camera tracking is the only place render.js reaches into the render
+   adapter for something other than depth -- cameraTargetX reads the same
+   Transform (x, z) component the adapter's z projection reads. */
 function camera(combat, W) {
-  const mid = (combat.player.x + combat.enemy.x) / 2;
+  const mid = cameraTargetX(combat.entities);
   return Math.max(0, Math.min(WORLD_W - W, mid - W / 2));
 }
 
@@ -73,7 +77,7 @@ function drawStand(g, player, pose, camX, tsec) {
   const rushing = pose.action === 'rush' || pose.action === 'special';
   stamp(g, b, {
     x: player.x - camX - player.facing * (rushing ? 30 : 22),
-    y: GROUND_Y - (rushing ? 22 : 10) + bob,
+    y: GROUND_Y + zToYOffset(player.z) - (rushing ? 22 : 10) + bob,
     ox: 150, oy: 214, flip: player.facing,
     outline: '#160A28', thickOutline: true,
     rim: { color: '#D5A8FF', alpha: 0.5, dx: -1, dy: -2 },
@@ -93,7 +97,7 @@ function drawBarrage(g, player, enemy, pose, camX) {
   barrageFists(b.g, pose.standPunch, span);
   b.g.restore();
   stamp(g, b, {
-    x: player.x - camX, y: GROUND_Y - 74, ox: 24, oy: 45,
+    x: player.x - camX, y: GROUND_Y + zToYOffset(player.z) - 74, ox: 24, oy: 45,
     flip: player.facing, outline: '#160A28', thickOutline: true
   });
 }
@@ -115,9 +119,10 @@ function drawFighter(g, f, pose, camX, tsec, isPlayer, phaseIndex, rim) {
       ghosts.push({ dx: -(f.facing || 1) * i * 5, dy: 0, alpha: 0.22 * pose.smear / i, color: '#FFFFFF' });
     }
   }
-  contactShadow(g, f.x - camX, GROUND_Y + 1, 15, 4.5, '#000000', 0.5);
+  const fy = GROUND_Y + zToYOffset(f.z);
+  contactShadow(g, f.x - camX, fy + 1, 15, 4.5, '#000000', 0.5);
   stampFighter(g, isPlayer ? 'player' : 'enemy', 240, 200, 120, 184, paint, {
-    x: f.x - camX, y: GROUND_Y, flip: f.facing, rot: (pose.bodyRot || 0),
+    x: f.x - camX, y: fy, flip: f.facing, rot: (pose.bodyRot || 0),
     sx: pose.squashX, sy: pose.squashY,
     shadow: shadowOpts(pose),
     flash: { color: '#FFB8A8', alpha: Math.min(0.24, (pose.flash || 0) * 0.3) },
@@ -153,14 +158,17 @@ export function drawCombat(g, W, H, combat, tsec, dtMs, nodeId) {
   drawBackground(g, W, H, scene, camX, tsec, GROUND_Y);
 
   if (enemy.hp > 0) telegraph(g, enemy, camX, tsec);
-  groundDust(g, ppose, player.x - camX, tsec, 0);
-  if (epose) groundDust(g, epose, enemy.x - camX, tsec, 1.2);
+  groundDust(g, ppose, player.x - camX, GROUND_Y + zToYOffset(player.z), tsec, 0);
+  if (epose) groundDust(g, epose, enemy.x - camX, GROUND_Y + zToYOffset(enemy.z), tsec, 1.2);
 
   drawStand(g, player, ppose, camX, tsec);
-  const playerFirst = enemy.x < player.x;
+  /* Depth sort (render_adapter.js): farthest-z entity draws first (behind),
+     nearest-z draws last (in front). Falls back to the old x-based
+     left/right order when both fighters share a depth -- the common case
+     until something actually leaves the resting z. */
   const drawP = () => drawFighter(g, player, ppose, camX, tsec, true, 0, rim);
   const drawE = () => epose && drawFighter(g, enemy, epose, camX, tsec, false, enemy.phaseIndex, rim);
-  if (playerFirst) { drawP(); drawE(); } else { drawE(); drawP(); }
+  depthSort(combat.entities).forEach(f => (f.kind === 'player' ? drawP : drawE)());
   drawBarrage(g, player, enemy, ppose, camX);
 
   projectiles(g, enemy, camX, tsec);
