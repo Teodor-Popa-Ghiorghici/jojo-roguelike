@@ -16,7 +16,7 @@ function quantize(t, steps) {
 
 function basePose() {
   return {
-    action: 'idle', legSwing: 0, armSwing: 0, strikeArm: 0, torsoLean: 0,
+    action: 'idle', legSwing: 0, gaitPhase: -1, armSwing: 0, strikeArm: 0, torsoLean: 0,
     headBob: 0, squashX: 1, squashY: 1,
     faceEyes: 'normal', faceMouth: 'closed',
     flashWhite: 0, ghost: 0, glowStand: 0, telegraph: 0
@@ -90,6 +90,7 @@ export function computePlayerPose(player, tsec, outcome) {
   if (player.moving) {
     pose.action = 'walk';
     const f = quantize((tsec * 3.2) % 1, WALK_FRAMES);
+    pose.gaitPhase = f;
     const s = Math.sin(f * Math.PI * 2);
     pose.legSwing = s;
     pose.armSwing = -s * 0.6;
@@ -136,6 +137,7 @@ export function computeEnemyPose(enemy, tsec) {
   } else if (enemy.moving) {
     pose.action = 'walk';
     const f = quantize((tsec * 3) % 1, WALK_FRAMES);
+    pose.gaitPhase = f;
     const s = Math.sin(f * Math.PI * 2);
     pose.legSwing = s;
     pose.armSwing = -s * 0.5;

@@ -30,6 +30,18 @@ export function disc(g, cx, cy, r, color) {
   }
 }
 
+/* a partial disc, only the rows between dyMin and dyMax (both measured
+   from centre, negative = up) -- a cap dome sitting on a head, a visor,
+   a crescent of hair peeking from under a hat */
+export function discSlice(g, cx, cy, r, color, dyMin, dyMax) {
+  g.fillStyle = color;
+  for (let dy = -r; dy <= r; dy++) {
+    if (dy < dyMin || dy > dyMax) continue;
+    const w = Math.floor(Math.sqrt(Math.max(0, r * r - dy * dy)));
+    g.fillRect(Math.round(cx - w), Math.round(cy + dy), w * 2 + 1, 1);
+  }
+}
+
 /* ordered 4x4 dither between two colours, density in [0,16) -- texture and
    soft gradients without inventing an in-between colour */
 export function dither(g, x, y, w, h, colorA, colorB, density) {
