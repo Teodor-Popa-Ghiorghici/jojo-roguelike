@@ -20,12 +20,13 @@ const INPUT_BUFFER_MS = 150; // ~9 frames @60Hz, spec §3.6 -- inputs made
                               // during recovery/windup are queued, not dropped
 const ACTION_KEYS = new Set(['light', 'medium', 'heavy', 'special', 'rush', 'dodge', 'parry']);
 
-export function createCombat(enemyDef, runBuffs, opts) {
+export function createCombat(enemyDef, runBuffs, opts, rng) {
   opts = opts || {};
   const stand = STANDS.star_platinum;
   const player = createPlayerFighter(stand, 180, runBuffs);
   const enemy = createEnemyFighter(enemyDef, 470, opts.hpMult, opts.speedMult, opts.tint);
   const isBoss = !!enemyDef.phases;
+  const aiRng = rng.stream('ai');
   enemy.ai = createEnemyAI(isBoss ? enemyDef.phases[0].attackPatterns : enemyDef.attackPatterns);
 
   const dispatcher = createDispatcher();
@@ -275,7 +276,7 @@ export function createCombat(enemyDef, runBuffs, opts) {
       if (dist > enemy.ai.approachRange) { enemy.x += dir * enemy.speedPx * dt / 1000; enemy.moving = true; }
     }
     const wasWindup = enemy.ai.state === 'windup';
-    const ev = stepEnemyAI(enemy.ai, Math.abs(player.x - enemy.x), dt);
+    const ev = stepEnemyAI(enemy.ai, Math.abs(player.x - enemy.x), dt, aiRng);
     if (!wasWindup && enemy.ai.state === 'windup') dispatcher.fire('onTelegraphStart', { pattern: enemy.ai.pattern });
     if (ev && ev.type === 'spawnMelee') {
       resolveIncomingHit(ev.pattern, enemy.x);

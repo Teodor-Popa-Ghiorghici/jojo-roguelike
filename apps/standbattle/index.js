@@ -8,14 +8,11 @@ import { drawMap, pickNode, drawEvent, pickChoice, drawRest, pickRestContinue } 
 import { drawTitle, drawComplete } from './scenes.js';
 import { wireCombatAudio, sfxVictory, sfxDefeat, sfxActComplete } from './audio.js';
 import { musicStart, musicSetIntensity, musicStop } from './music.js';
+import { createSaveStore } from './save.js';
+import { createRng } from './rng.js';
+import { createInputSystem } from './input.js';
 
 const W = 480, H = 270;
-const KEYMAP = {
-  ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
-  KeyJ: 'light', KeyK: 'medium', KeyL: 'heavy',
-  Space: 'dodge', ShiftLeft: 'parry', ShiftRight: 'parry',
-  KeyU: 'special', KeyI: 'rush'
-};
 
 export default {
   id: 'standbattle',
@@ -26,10 +23,22 @@ export default {
   resizable: true,
 
   async mount(root, ctx) {
-    const state = { scene: 'title', runState: null, combat: null, currentEvent: null };
-    let shakeEnabled = await ctx.load('shakeEnabled');
-    if (shakeEnabled == null) shakeEnabled = true;
-    const cleared = !!(await ctx.load('cleared'));
+    const saveStore = createSaveStore(ctx);
+    const meta = await saveStore.loadMeta();
+    const savedRun = await saveStore.loadRun();
+
+    const state = { scene: 'title', runState: null, runRng: null, combat: null, currentEvent: null };
+    let shakeEnabled = meta.shakeEnabled !== false;
+    const cleared = !!meta.cleared;
+    const input = createInputSystem(meta.keymap);
+
+    if (savedRun && savedRun.nodeIndex < ACT1_MORIOH.nodes.length) {
+      /* Resuming mid-run loses at most the node in progress -- combat
+         state itself is never persisted, only the map-scene checkpoint. */
+      state.runState = savedRun;
+      state.runRng = createRng(savedRun.seed);
+      state.scene = 'map';
+    }
 
     const pane = document.createElement('div');
     pane.className = 'gamepane sbpane';
@@ -72,14 +81,20 @@ export default {
       ev.stopPropagation();
       shakeEnabled = !shakeEnabled;
       if (state.combat) state.combat.juice.setShakeEnabled(shakeEnabled);
-      ctx.save('shakeEnabled', shakeEnabled);
+      meta.shakeEnabled = shakeEnabled;
+      saveStore.saveMeta(meta);
       updateShakeBtn();
       if (window.Snd) window.Snd.click();
     });
 
+    function persistRun() { saveStore.saveRun(state.runState); }
+
     function newRun() {
-      state.runState = { hp: 100, maxHp: 100, nodeIndex: 0, buffs: [] };
+      const seed = Date.now() + '-' + Math.floor(Math.random() * 1e9);
+      state.runRng = createRng(seed);
+      state.runState = { seed, hp: 100, maxHp: 100, nodeIndex: 0, buffs: [] };
       state.scene = 'map';
+      persistRun();
     }
 
     function startCombatForNode(node) {
@@ -93,7 +108,7 @@ export default {
           opts.speedMult = m.speedMult; opts.hpMult = m.hpMult; opts.tint = m.tint;
         }
       }
-      const combat = createCombat(enemyDef, state.runState.buffs, opts);
+      const combat = createCombat(enemyDef, state.runState.buffs, opts, state.runRng);
       combat.player.hp = state.runState.hp;
       combat.player.maxHp = state.runState.maxHp;
       wireCombatAudio(combat);
@@ -113,13 +128,20 @@ export default {
       state.runState.nodeIndex++;
       state.scene = state.runState.nodeIndex >= ACT1_MORIOH.nodes.length ? 'complete' : 'map';
       musicSetIntensity(0);
-      if (state.scene === 'complete') { ctx.save('cleared', true); sfxActComplete(); }
+      if (state.scene === 'complete') {
+        meta.cleared = true;
+        saveStore.saveMeta(meta);
+        saveStore.clearRun();
+        sfxActComplete();
+      } else {
+        persistRun();
+      }
     }
 
     function applyEventChoice(idx) {
       const choice = state.currentEvent.choices[idx];
       if (choice.kind === 'heal') state.runState.hp = Math.min(state.runState.maxHp, state.runState.hp + choice.amount);
-      else if (choice.kind === 'buff') state.runState.buffs.push(RUN_BUFFS[Math.floor(Math.random() * RUN_BUFFS.length)]);
+      else if (choice.kind === 'buff') state.runState.buffs.push(state.runRng.stream('rewards').pick(RUN_BUFFS));
       if (window.Snd) window.Snd.chirp();
       advanceNode();
     }
@@ -151,6 +173,7 @@ export default {
           state.runState.hp = state.combat.player.hp;
           advanceNode();
         } else {
+          saveStore.clearRun();
           state.scene = 'title';
         }
       } else if (state.scene === 'complete') {
@@ -159,11 +182,11 @@ export default {
     }
 
     function onKey(ev, down) {
-      const action = KEYMAP[ev.code];
-      if (!action) return;
+      const resolved = input.resolveKey(ev.code, down);
+      if (!resolved) return;
       ev.preventDefault();
       ev.stopPropagation();
-      if (state.scene === 'combat' && state.combat) state.combat.setKey(action, down);
+      if (state.scene === 'combat' && state.combat) state.combat.setKey(resolved.action, down);
     }
     cv.addEventListener('keydown', ev => onKey(ev, true));
     cv.addEventListener('keyup', ev => onKey(ev, false));
@@ -173,6 +196,7 @@ export default {
     let raf = null, t0 = performance.now(), tsec = 0;
     function frame(now) {
       raf = requestAnimationFrame(frame);
+      input.tick();
       const dt = Math.min(50, now - t0);
       t0 = now;
       tsec += dt / 1000;

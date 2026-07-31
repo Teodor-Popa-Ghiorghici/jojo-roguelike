@@ -7,8 +7,7 @@
 import { px, poly, ellipse, line, ring, disc } from './draw.js';
 import { text } from './font.js';
 import { FX } from './palette.js';
-
-const GROUND_Y = 208;
+import { GROUND_Y } from './constants.js';
 
 /* Transient, render-only reactions to state changes. Keeping them here
    (rather than in combat.js) means the fight simulation never has to
