@@ -20,9 +20,10 @@ import { createFx, wireFx } from './fx.js';
 import { sceneEvents, telegraph, projectiles, particles, groundDust } from './arena.js';
 import { text } from './font.js';
 import { FX, JOTARO, S, SH, BASE, LT, RIM } from './palette.js';
+import { WORLD_W } from './arena_bounds.js';
 
 export const GROUND_Y = 208;
-export const WORLD_W = 600;
+export { WORLD_W };
 
 const ENEMY_ART = { morioh_thug: drawThug, angelo: drawAngelo };
 const SCENE_FOR = {
