@@ -11,16 +11,16 @@ import { createPlayerFighter, createEnemyFighter, applyDamage, clampPersistence 
 import { createDispatcher } from './hooks.js';
 import { createJuice } from './juice.js';
 
-const ARENA_MIN = 24, ARENA_MAX = 360;
+const ARENA_MIN = 40, ARENA_MAX = 560;
 const DODGE_MS = 260, DODGE_IFRAME_MS = 200, PARRY_MS = 200;
-const PLAYER_SPEED = 95;
+const PLAYER_SPEED = 172;
 const DEATH_ANIM_MS = 900;
 
 export function createCombat(enemyDef, runBuffs, opts) {
   opts = opts || {};
   const stand = STANDS.star_platinum;
-  const player = createPlayerFighter(stand, 70, runBuffs);
-  const enemy = createEnemyFighter(enemyDef, 314, opts.hpMult, opts.speedMult, opts.tint);
+  const player = createPlayerFighter(stand, 180, runBuffs);
+  const enemy = createEnemyFighter(enemyDef, 470, opts.hpMult, opts.speedMult, opts.tint);
   const isBoss = !!enemyDef.phases;
   enemy.ai = createEnemyAI(isBoss ? enemyDef.phases[0].attackPatterns : enemyDef.attackPatterns);
 
@@ -85,7 +85,7 @@ export function createCombat(enemyDef, runBuffs, opts) {
         player.comboCount++;
         juice.triggerHitstop(m.hitstopMs);
         juice.triggerShake(player.facing, 0, dead ? 6 : m.type === 'heavy' || m.type === 'rush' ? 4 : 2, 140);
-        juice.spawnBurst(enemy.x, 100, '#FFFF55', dead ? 18 : 6, 90, player.facing, -0.4);
+        juice.spawnBurst(enemy.x, 154, '#FFFF55', dead ? 18 : 6, 90, player.facing, -0.4);
         dispatcher.fire('onHit', { moveType: m.type, combo: player.comboCount, finishing: dead });
         if (dead) {
           enemy.deathTimer = DEATH_ANIM_MS;
@@ -101,7 +101,7 @@ export function createCombat(enemyDef, runBuffs, opts) {
     if (dist > pattern.range) return;
     if (player.invulnerable) {
       push('DODGED');
-      juice.spawnBurst(player.x, 100, '#55FFFF', 5, 60);
+      juice.spawnBurst(player.x, 154, '#55FFFF', 5, 60);
       dispatcher.fire('onDodgeSuccess', {});
       return;
     }
@@ -112,7 +112,7 @@ export function createCombat(enemyDef, runBuffs, opts) {
       player.stateTimer = 60; // tight parry rewards a fast return to idle
       juice.triggerHitstop(120);
       juice.triggerShake(-player.facing, 0, 6, 160);
-      juice.spawnBurst(player.x, 100, '#FFFFFF', 14, 110);
+      juice.spawnBurst(player.x, 154, '#FFFFFF', 14, 110);
       dispatcher.fire('onParrySuccess', {});
       const dmg = 12 * player.powerMult;
       const dead = applyDamage(enemy, dmg);
@@ -130,7 +130,7 @@ export function createCombat(enemyDef, runBuffs, opts) {
     player.comboCount = 0;
     juice.triggerHitstop(pattern.hitstopMs);
     juice.triggerShake(atX >= player.x ? -1 : 1, 0.3, pattern.dmgMult > 1.5 ? 7 : 4, 180);
-    juice.spawnBurst(player.x, 100, '#FF5555', 10, 100);
+    juice.spawnBurst(player.x, 154, '#FF5555', 10, 100);
     dispatcher.fire('onDamageTaken', { dmg, heavy: pattern.dmgMult > 1.5 });
     player.state = dead ? 'dead' : 'hitstun';
     player.stateTimer = 260;

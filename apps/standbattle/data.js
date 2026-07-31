@@ -30,28 +30,28 @@ export const STANDS = {
 export const MOVES = {
   sp_light: {
     id: 'sp_light', type: 'light', persistenceCost: 0, persistenceGain: 5,
-    windupMs: 50, activeMs: 90, recoverMs: 130, range: 34,
-    hitCount: 1, damage: 4, knockback: 5, hitstopMs: 55, label: 'JAB'
+    windupMs: 50, activeMs: 90, recoverMs: 130, range: 62,
+    hitCount: 1, damage: 4, knockback: 9, hitstopMs: 55, label: 'JAB'
   },
   sp_medium: {
     id: 'sp_medium', type: 'medium', persistenceCost: 0, persistenceGain: 8,
-    windupMs: 110, activeMs: 110, recoverMs: 190, range: 38,
-    hitCount: 1, damage: 8, knockback: 9, hitstopMs: 70, label: 'STRIKE'
+    windupMs: 110, activeMs: 110, recoverMs: 190, range: 68,
+    hitCount: 1, damage: 8, knockback: 16, hitstopMs: 70, label: 'STRIKE'
   },
   sp_heavy: {
     id: 'sp_heavy', type: 'heavy', persistenceCost: 0, persistenceGain: 12,
-    windupMs: 230, activeMs: 130, recoverMs: 340, range: 40,
-    hitCount: 1, damage: 15, knockback: 16, hitstopMs: 110, label: 'HEAVY'
+    windupMs: 230, activeMs: 130, recoverMs: 340, range: 76,
+    hitCount: 1, damage: 15, knockback: 28, hitstopMs: 110, label: 'HEAVY'
   },
   sp_barrage: {
     id: 'sp_barrage', type: 'special', persistenceCost: 35, persistenceGain: 0,
-    windupMs: 90, activeMs: 260, recoverMs: 220, range: 36,
-    hitCount: 4, damage: 4, knockback: 3, hitstopMs: 45, label: 'ORA BARRAGE'
+    windupMs: 90, activeMs: 260, recoverMs: 220, range: 66,
+    hitCount: 4, damage: 4, knockback: 5, hitstopMs: 45, label: 'ORA BARRAGE'
   },
   sp_ora_rush: {
     id: 'sp_ora_rush', type: 'rush', persistenceCost: 80, persistenceGain: 0,
-    windupMs: 140, activeMs: 620, recoverMs: 300, range: 42,
-    hitCount: 9, damage: 5, knockback: 2, hitstopMs: 130, label: 'ORA ORA ORA!'
+    windupMs: 140, activeMs: 620, recoverMs: 300, range: 78,
+    hitCount: 9, damage: 5, knockback: 4, hitstopMs: 130, label: 'ORA ORA ORA!'
   }
 };
 
@@ -61,12 +61,12 @@ export const MOVES = {
 export const ENEMIES = {
   morioh_thug: {
     id: 'morioh_thug', name: 'MORIOH DELINQUENT', baseType: 'melee',
-    hp: 40, power: 5, speedPx: 70, precision: 3,
+    hp: 40, power: 5, speedPx: 122, precision: 3,
     attackPatterns: ['sweep', 'telegraphed_slam']
   },
   angelo: {
     id: 'angelo', name: 'ANGELO', baseType: 'elite',
-    hp: 78, power: 7, speedPx: 95, precision: 6,
+    hp: 78, power: 7, speedPx: 165, precision: 6,
     attackPatterns: ['sweep', 'projectile', 'telegraphed_slam']
   }
 };
@@ -82,7 +82,7 @@ export const MODIFIERS = {
 export const BOSS_KILLER_QUEEN = {
   id: 'killer_queen', character: 'Yoshikage Kira', standName: 'Killer Queen',
   source: 'Diamond is Unbreakable (Part 4)',
-  hp: 200, power: 9, speedPx: 80, precision: 8,
+  hp: 200, power: 9, speedPx: 140, precision: 8,
   phases: [
     { hpAbove: 0.5, attackPatterns: ['sweep', 'telegraphed_slam', 'projectile'] },
     { hpAbove: 0, attackPatterns: ['sweep', 'telegraphed_slam', 'projectile', 'sheer_heart_attack'] }

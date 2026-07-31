@@ -9,7 +9,7 @@ import { drawTitle, drawComplete } from './scenes.js';
 import { wireCombatAudio, sfxVictory, sfxDefeat, sfxActComplete } from './audio.js';
 import { musicStart, musicSetIntensity, musicStop } from './music.js';
 
-const W = 384, H = 216;
+const W = 480, H = 270;
 const KEYMAP = {
   ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
   KeyJ: 'light', KeyK: 'medium', KeyL: 'heavy',
@@ -21,8 +21,8 @@ export default {
   id: 'standbattle',
   title: 'STANDBATTLE.EXE',
   icon: 'assets/images/standbattle.png',
-  width: 800,
-  height: 540,
+  width: 1000,
+  height: 620,
   resizable: true,
 
   async mount(root, ctx) {
@@ -54,9 +54,11 @@ export default {
     const g = cv.getContext('2d');
     g.imageSmoothingEnabled = false;
 
+    /* integer scale only (§11) -- fit both axes, never a fractional blow-up */
     function resize() {
-      const availW = Math.max(W, pane.clientWidth || W * 2);
-      const scale = Math.max(1, Math.floor(availW / W));
+      const availW = Math.max(W, pane.clientWidth || W);
+      const availH = Math.max(H, pane.clientHeight || H);
+      const scale = Math.max(1, Math.floor(Math.min(availW / W, availH / H)));
       cv.style.width = (W * scale) + 'px';
       cv.style.height = (H * scale) + 'px';
     }
@@ -185,13 +187,13 @@ export default {
           musicSetIntensity(0);
           if (c.outcome === 'win') sfxVictory(); else sfxDefeat();
         }
-        drawCombat(g, W, H, c, tsec);
+        drawCombat(g, W, H, c, tsec, dt, ACT1_MORIOH.nodes[state.runState.nodeIndex].id);
       }
       else if (state.scene === 'map') drawMap(g, W, H, ACT1_MORIOH.nodes, state.runState, tsec);
-      else if (state.scene === 'event') drawEvent(g, W, H, state.currentEvent);
-      else if (state.scene === 'rest') drawRest(g, W, H, state.runState);
+      else if (state.scene === 'event') drawEvent(g, W, H, state.currentEvent, tsec);
+      else if (state.scene === 'rest') drawRest(g, W, H, state.runState, tsec);
       else if (state.scene === 'title') drawTitle(g, W, H, tsec, cleared);
-      else if (state.scene === 'complete') drawComplete(g, W, H, state.runState);
+      else if (state.scene === 'complete') drawComplete(g, W, H, state.runState, tsec);
       info.textContent = state.scene === 'combat'
         ? 'A/D MOVE  J/K/L ATTACK  SPACE DODGE  SHIFT PARRY  U SPECIAL  I RUSH'
         : 'CLICK TO CONTINUE';
