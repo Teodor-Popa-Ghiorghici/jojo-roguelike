@@ -37,19 +37,25 @@ export function applyPoiseDamage(enemy, amount) {
 /* One sim frame of poise bookkeeping: regen once the no-hit window has
    elapsed, and converting a pending poise-break into an actual Stagger
    the instant the enemy reaches an interruptible state. Call once per
-   frame per enemy, before its AI is stepped. */
+   frame per enemy, before its AI is stepped. Returns true the one frame a
+   Stagger is actually entered, so the caller (combat_enemy.js) can fire
+   the onStaggerStart effect hook (tech §2.1) without this file needing to
+   know the dispatcher exists -- poise.js stays render/hook-agnostic, the
+   same separation combat_enemy.js already keeps for everything else. */
 export function stepPoise(enemy) {
-  if (enemy.hp <= 0) return;
+  if (enemy.hp <= 0) return false;
   if (enemy.poiseRegenTimer > 0) {
     enemy.poiseRegenTimer -= 1;
     if (enemy.poiseRegenTimer <= 0 && !enemy.poiseBroken) enemy.poise.current = enemy.poise.max;
   }
   if (enemy.poiseBroken && enemy.ai.state !== 'staggered') {
-    if (isArmoredNow(enemy.ai)) return; // firm, not unfair -- always paired with the mandatory telegraph
-    if (!enemyIsVulnerableToStagger(enemy.ai)) return;
+    if (isArmoredNow(enemy.ai)) return false; // firm, not unfair -- always paired with the mandatory telegraph
+    if (!enemyIsVulnerableToStagger(enemy.ai)) return false;
     enterStagger(enemy.ai, STAGGER_FRAMES, STAGGER_DAMAGE_MULT);
     enemy.poiseBroken = false;
     enemy.poise.current = enemy.poise.max;
     enemy.poiseRegenTimer = 0;
+    return true;
   }
+  return false;
 }

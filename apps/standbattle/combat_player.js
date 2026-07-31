@@ -1,29 +1,33 @@
-/* Player-side stepping: movement, the defensive triangle (Step/Guard/
-   Clash, defense.js), and frame-data attack resolution (tech §2.4/§2.5).
-   Split out of combat.js to keep both files under the repo's 300-line
-   rule -- mirrors the existing player/enemy seam combat_enemy.js already
-   established in Phase 1. Every timer here is a whole sim frame at the
-   fixed 60Hz step. */
+/* Player-side stepping: movement, Step's edge/buffer handling, and
+   frame-data attack resolution (tech §2.4/§2.5). combat_defense.js holds
+   the sibling *incoming*-attack half (Step/Guard/Clash dispatch against
+   an enemy attack) -- split out from this file once Phase 3's hook wiring
+   pushed it over the repo's 300-line file cap; mirrors the player/enemy
+   seam combat_enemy.js already established in Phase 1. Every timer here
+   is a whole sim frame at the fixed 60Hz step.
 
-import { resolveMoveFrames, resolveDamage, applyHit, rollCrit, resolvePoiseDamage } from './resolvers.js';
+   Phase 3: every resolver call below that can take `bus`/`stats` now does
+   (combat.dispatcher/combat.stats) -- this is where the tech §2.1 effect
+   pipeline's onMoveStart/onHitResolve/onHitLanded/onCritCheck/onKill/
+   onStepStart hooks actually fire from (onDamageIncoming/onDamageTaken/
+   onStaggerStart/onClashSuccess/onPerfectClash/onGuardBreak live in
+   combat_defense.js instead). */
+
+import {
+  resolveMoveFrames, resolveDamage, applyHit, rollCrit, resolvePoiseDamage, resolvePersistenceCost
+} from './resolvers.js';
 import { stepMoveHitboxes } from './hitbox.js';
-import { spendPersistence, gainPersistence, gainMomentum, onMomentumHitTaken, tickResources } from './resources.js';
+import { spendPersistence, gainPersistence, gainMomentum, tickResources } from './resources.js';
 import { applyPoiseDamage } from './poise.js';
+import { applyStatus } from './status.js';
+import { resolveStatusPotency } from './stats.js';
 import * as defense from './defense.js';
 import { ARENA_MIN, ARENA_MAX, ARENA_Z_MIN, ARENA_Z_MAX, SIM_HZ, DEATH_ANIM_FRAMES } from './constants.js';
 
 export const ACTION_KEYS = new Set(['light', 'medium', 'heavy', 'special', 'rush', 'dodge', 'parry']);
 
 const HURT_FLASH_FRAMES = 9; // 150ms fade
-const HITSTUN_FRAMES = 16; // 260ms
-const PLAYER_IFRAME_FRAMES = 8; // GDD §3.9: i-frames after being hit, prevents crowd lock-loops
 const PLAYER_SPEED_PER_FRAME = 172 / SIM_HZ;
-
-/* Clash's counter-hit is a real hit like any other -- it goes through the
-   same three resolvers as a normal move, just with a small synthetic
-   hitbox descriptor instead of one drawn from moves.js (GDD §3.7 doesn't
-   assign Clash a move slot, so there's nothing in moves.js to point at). */
-const CLASH_COUNTER_HITBOX = { dmg: 12, poise: 14, tags: ['clash', 'melee'] };
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
@@ -33,8 +37,16 @@ export function performAction(combat, kind) {
   else tryAttack(combat, kind);
 }
 
+/* onStepStart (tech §2.1 minimum surface) fires only once a Step actually
+   begins -- gating on defense.startStep's own charge check rather than
+   firing unconditionally keeps "Start" meaning "a step has begun", and
+   needs no signature change to defense.js. */
 function startDodge(combat) {
-  if (!defense.startStep(combat.player, combat.enemy)) combat.dispatcher.fire('onMoveDenied', {});
+  if (defense.startStep(combat.player, combat.enemy)) {
+    combat.dispatcher.runEffect('onStepStart', { entity: combat.player, cancelled: false });
+  } else {
+    combat.dispatcher.fire('onMoveDenied', {});
+  }
 }
 
 function tryAttack(combat, kind) {
@@ -46,12 +58,21 @@ function tryAttack(combat, kind) {
 }
 
 /* Starts (or cancels into) a move. Used both for a fresh press and for a
-   cancel-window transition -- the only two ways a move ever starts. */
+   cancel-window transition -- the only two ways a move ever starts.
+   onMoveStart (mutable) fires after costs are checked-affordable but
+   before anything is spent or committed, so a Fragment that cancels a
+   move never leaves Persistence/Momentum half-spent. */
 function attemptMove(combat, moveId) {
   const player = combat.player;
-  const move = resolveMoveFrames(player, moveId);
-  if (move.costs.persistence && player.persistence < move.costs.persistence) return false;
+  const move = resolveMoveFrames(player, moveId, combat.stats, combat.dispatcher);
+  const persistenceCost = resolvePersistenceCost({ entity: player, move, bus: combat.dispatcher });
+  if (persistenceCost && player.persistence < persistenceCost) return false;
   if (move.costs.momentum && player.momentum < move.costs.momentum) return false;
+
+  const startCtx = { entity: player, move, cancelled: false };
+  combat.dispatcher.runEffect('onMoveStart', startCtx);
+  if (startCtx.cancelled) return false;
+
   player.state = 'attack';
   player.activeMove = move;
   player.movePhase = 'windup';
@@ -59,7 +80,7 @@ function attemptMove(combat, moveId) {
   player.hitboxSpent = new Set();
   player.hitsLanded = 0;
   player.armorConsumedThisMove = false;
-  if (move.costs.persistence) spendPersistence(player, move.costs.persistence);
+  if (persistenceCost) spendPersistence(player, persistenceCost);
   if (move.costs.momentum) { player.momentum -= move.costs.momentum; }
   player.chainCounts[move.id] = (player.lastMoveId === move.id ? (player.chainCounts[move.id] || 0) : 0) + 1;
   player.lastMoveId = move.id;
@@ -86,14 +107,15 @@ function tryCancel(combat) {
 }
 
 function resolveHitboxes(combat, move) {
-  const player = combat.player, enemy = combat.enemy;
+  const player = combat.player, enemy = combat.enemy, bus = combat.dispatcher;
   if (enemy.hp <= 0) return;
   stepMoveHitboxes(player, move, player.moveFrame, player.hitboxSpent, enemy, hb => {
     player.hitsLanded++;
-    const critInfo = rollCrit({ attacker: player, rng: combat.combatRng });
-    const dmg = resolveDamage({ attacker: player, defender: enemy, hitbox: hb, isPlayerAttacker: true, critMult: critInfo.mult });
+    const critInfo = rollCrit({ attacker: player, rng: combat.combatRng, stats: combat.stats, bus });
+    const dmgCtx = { attacker: player, defender: enemy, hitbox: hb, move, isPlayerAttacker: true, critMult: critInfo.mult, bus };
+    const dmg = resolveDamage(dmgCtx);
     const { dead } = applyHit({ defender: enemy }, dmg);
-    applyPoiseDamage(enemy, resolvePoiseDamage({ hitbox: hb }));
+    applyPoiseDamage(enemy, resolvePoiseDamage({ hitbox: hb, bus }));
     enemy.knockVx = (enemy.x >= player.x ? 1 : -1) * move.knockback;
     gainPersistence(player, move.gains.persistence || 0);
     gainMomentum(player, move.gains.momentum || 0);
@@ -102,11 +124,31 @@ function resolveHitboxes(combat, move) {
     combat.juice.triggerShake(player.facing, 0, dead ? 6 : (move.type === 'heavy' || move.type === 'rush') ? 4 : 2, 140);
     combat.juice.spawnBurst(enemy.x, 154, '#FFFF55', dead ? 18 : 6, 90, player.facing, -0.4);
     if (critInfo.crit) combat.pushLog('CRIT!');
-    combat.dispatcher.fire('onHit', { moveType: move.type, combo: player.comboCount, finishing: dead, crit: critInfo.crit });
+
+    /* onHitLanded (mutable, tech §2.1): fires after the hit is confirmed
+       to have connected and dealt damage -- the hook a Fragment applying
+       an on-hit status (e.g. "your 3rd Light applies 2 Virus") targets,
+       distinct from onHitResolve's damage-number mutation above. */
+    const landedCtx = {
+      attacker: player, defender: enemy, move, slot: move.slot,
+      chainCount: player.chainCounts[move.id] || 0, crit: critInfo.crit, dead, statuses: [], cancelled: false
+    };
+    bus.runEffect('onHitLanded', landedCtx);
+    /* Precision -> status-effect accuracy (spec §2.1): the attacker's
+       status-application potency scales whatever stack count a Fragment
+       queued. Star Platinum's Precision (6) pins this to exactly 1.0 (see
+       stats.js), so this is a no-op for the shipped prototype today. */
+    const potency = resolveStatusPotency(player, combat.stats);
+    landedCtx.statuses.forEach(s => applyStatus(enemy, s.id, Math.max(1, Math.round(s.stacks * potency))));
+
+    /* onHit stays a pure post-hoc EVENT (unchanged since Phase 0) --
+       audio.js/fx.js read this payload shape and neither needs nor gets
+       a mutable ctx (invariant 8: render/audio never write sim state). */
+    bus.fire('onHit', { moveType: move.type, combo: player.comboCount, finishing: dead, crit: critInfo.crit });
     if (dead) {
       enemy.deathTimer = DEATH_ANIM_FRAMES;
       gainMomentum(player, 15);
-      combat.dispatcher.fire('onKill', { combo: player.comboCount });
+      bus.runEffect('onKill', { entity: player, target: enemy, combo: player.comboCount, cancelled: false });
       combat.outcome = 'win';
     }
   });
@@ -143,79 +185,6 @@ function tryConsumeBuffer(combat) {
   if (player.state === 'idle') performAction(combat, kind);
 }
 
-/* Incoming-attack resolution against the player -- the defensive triangle
-   dispatch. Order matters: Step's invulnerability beats everything, a
-   live Clash window beats a raw hit, Guard mitigates what's left. Called
-   by combat_enemy.js for both melee patterns and projectiles. */
-export function resolveIncomingAttack(combat, pattern, atX) {
-  const player = combat.player, enemy = combat.enemy, juice = combat.juice, dispatcher = combat.dispatcher;
-
-  if (player.state === 'attack' && player.activeMove.armor && !player.armorConsumedThisMove &&
-    player.moveFrame >= player.activeMove.armor.from && player.moveFrame <= player.activeMove.armor.to &&
-    !(pattern.tags && pattern.tags.includes('heavy'))) {
-    player.armorConsumedThisMove = true;
-    combat.pushLog('ARMORED THROUGH');
-    return;
-  }
-
-  if (player.invulnerable) {
-    combat.pushLog('DODGED');
-    juice.spawnBurst(player.x, 154, '#55FFFF', 5, 60);
-    dispatcher.fire('onDodgeSuccess', {});
-    return;
-  }
-
-  if (player.parryWindow) {
-    const perfect = defense.resolveClashSuccess(player, enemy.ai, juice);
-    if (perfect) enemy.breakActive = true;
-    combat.pushLog(perfect ? 'PERFECT CLASH!' : 'CLASHED!');
-    juice.triggerShake(-player.facing, 0, 6, 160);
-    juice.spawnBurst(player.x, 154, '#FFFFFF', 14, 110);
-    dispatcher.fire(perfect ? 'onPerfectClash' : 'onParrySuccess', {});
-    const critInfo = rollCrit({ attacker: player, rng: combat.combatRng });
-    const dmg = resolveDamage({ attacker: player, defender: enemy, hitbox: CLASH_COUNTER_HITBOX, isPlayerAttacker: true, critMult: critInfo.mult });
-    const { dead } = applyHit({ defender: enemy }, dmg);
-    applyPoiseDamage(enemy, resolvePoiseDamage({ hitbox: CLASH_COUNTER_HITBOX }));
-    enemy.knockVx = (enemy.x >= player.x ? 1 : -1) * 14;
-    if (dead) { enemy.deathTimer = DEATH_ANIM_FRAMES; dispatcher.fire('onKill', {}); combat.outcome = 'win'; }
-    return;
-  }
-
-  if (player.guarding) {
-    const heavy = pattern.tags && pattern.tags.includes('heavy');
-    applyIncomingDamage(combat, pattern, atX, heavy ? 1 : defense.GUARD_DAMAGE_MULT, false);
-    if (heavy) { defense.guardBreakStagger(player); combat.pushLog('GUARD BROKEN'); }
-    else combat.pushLog('BLOCKED');
-    return;
-  }
-
-  applyIncomingDamage(combat, pattern, atX, 1, true);
-}
-
-function applyIncomingDamage(combat, pattern, atX, guardMult, causesHitstun) {
-  const player = combat.player, juice = combat.juice, dispatcher = combat.dispatcher;
-  const dmg = resolveDamage({
-    attacker: combat.enemy, defender: player, pattern, isPlayerAttacker: false,
-    guardMult: guardMult === 1 ? null : guardMult
-  });
-  const dead = applyHit({ defender: player }, dmg).dead;
-  player.knockVx = (player.x >= atX ? 1 : -1) * pattern.knockback;
-  onMomentumHitTaken(player);
-  juice.triggerHitstop(pattern.hitstopMs);
-  juice.triggerShake(atX >= player.x ? -1 : 1, 0.3, pattern.dmgMult > 1.5 ? 7 : 4, 180);
-  juice.spawnBurst(player.x, 154, '#FF5555', 10, 100);
-  dispatcher.fire('onDamageTaken', { dmg, heavy: pattern.dmgMult > 1.5 });
-  if (causesHitstun) {
-    player.state = dead ? 'dead' : 'hitstun';
-    player.stateTimer = HITSTUN_FRAMES;
-    player.invulnerable = !dead; // GDD §3.9: 8f of i-frames after being hit
-    player.hitIframeTimer = PLAYER_IFRAME_FRAMES;
-    player.parryWindow = false;
-  }
-  if (dead) combat.outcome = 'lose';
-  return dead;
-}
-
 export function updatePlayer(combat) {
   const player = combat.player, enemy = combat.enemy, keys = combat.keys;
   if (player.hurtFlash > 0) player.hurtFlash = Math.max(0, player.hurtFlash - 1 / HURT_FLASH_FRAMES);
@@ -237,7 +206,10 @@ export function updatePlayer(combat) {
     if (keys.forward) mz -= 1;
     if (keys.back) mz += 1;
     player.moving = mv !== 0 || mz !== 0;
-    const step = PLAYER_SPEED_PER_FRAME * player.speedMult;
+    /* getMoveSpeed (query, deliverable 6): the ported "+12% move speed"
+       run buff lives here now instead of a bespoke player.speedMult field. */
+    const speedMult = combat.dispatcher.runQuery('getMoveSpeed', 1, { entity: player });
+    const step = PLAYER_SPEED_PER_FRAME * speedMult;
     player.x = clamp(player.x + mv * step, ARENA_MIN, ARENA_MAX);
     player.z = clamp(player.z + mz * step, ARENA_Z_MIN, ARENA_Z_MAX);
     return;
@@ -252,7 +224,11 @@ export function updatePlayer(combat) {
     if (player.stateTimer <= 0) { player.state = 'idle'; player.invulnerable = false; tryConsumeBuffer(combat); }
   } else if (player.state === 'guard') {
     if (!keys.guard) { defense.endGuard(player); tryConsumeBuffer(combat); return; }
-    if (defense.stepGuardDrain(player)) { defense.guardBreakStagger(player); combat.pushLog('GUARD BROKEN'); }
+    if (defense.stepGuardDrain(player)) {
+      defense.guardBreakStagger(player);
+      combat.dispatcher.runEffect('onGuardBreak', { entity: player, cause: 'persistence', cancelled: false });
+      combat.pushLog('GUARD BROKEN');
+    }
   } else if (player.state === 'parry') {
     if (player.clashPhase === 'window') {
       defense.stepClashWindow(player);

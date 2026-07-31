@@ -11,8 +11,8 @@
      Transform  -> `.x`, `.z`           (belt-plane position, world units)
      Body       -> `.body`              (hurtbox stub; no collision system yet)
      Health     -> `.hp`, `.maxHp`
-     Poise      -> `.poise`             (stub; tech §3.9 is Phase 2)
-     Statuses   -> `.statuses`          (stub array; GDD §3.10 is Phase 2)
+     Poise      -> `.poise`             (real since Phase 2, poise.js)
+     Statuses   -> `.statuses`          (real since Phase 3, status.js -- ticked by combat.js each frame)
      StandLink  -> `.standLink`         (stub; GDD §3.1 User/Stand split is Phase 2+)
      Brain      -> `.brain`             (AI profile; aliases `.ai` on enemies, null on the player)
      Frames     -> `.frames`            (stub; the real frame-data timeline is tech §2.4, Phase 2)
@@ -29,24 +29,27 @@ export const DODGE_CHARGE_MAX = 2;
 
 function attachComponentStubs(entity) {
   entity.body = { hurtboxW: 30, hurtboxH: 64 }; // unused until Phase 2 hitboxes
-  entity.poise = { current: Infinity, max: Infinity }; // unused until Phase 2 stagger
-  entity.statuses = []; // unused until the status system exists
+  entity.poise = { current: Infinity, max: Infinity }; // overwritten for enemies by poise.js's initPoise
+  entity.statuses = []; // populated by status.js's applyStatus, ticked by stepStatuses
   entity.standLink = null; // unused until the User/Stand split exists
   entity.frames = null; // unused until the frame-data timeline exists
   entity.aggro = 1; // unused until crowds/target-selection exist
   return entity;
 }
 
-export function createPlayerFighter(stand, x, runBuffs, z) {
-  const powerMult = runBuffs.reduce((m, b) => m * (b.powerMult || 1), 1);
-  const speedMult = runBuffs.reduce((m, b) => m * (b.speedMult || 1), 1);
-  const maxPersistence = 100 + runBuffs.reduce((s, b) => s + (b.maxPersistenceBonus || 0), 0);
+/* `runBuffs` was consumed here directly through Phase 2 (three bespoke
+   fields: powerMult/speedMult/a maxPersistence bonus). Phase 3 ports all
+   three onto the hooks.js query pipeline (effect_lib.js's installRunBuffs,
+   wired in combat.js) so this factory no longer knows buffs exist at all
+   -- deliverable 6's "delete their bespoke code". maxPersistence starts at
+   the Stand's base 100 and is resolved through getMaxPersistence once,
+   right after this call, by combat.js. */
+export function createPlayerFighter(stand, x, z) {
   const entity = {
     id: 'player', kind: 'player', stand, x, z: z == null ? Z_REST : z, facing: 1,
     hp: 100, maxHp: 100,
-    persistence: 30, maxPersistence,
+    persistence: 30, maxPersistence: 100,
     momentum: 0, framesSinceHitLanded: 0, // GDD §3.8 -- the mechanical resource comboCount used to be
-    powerMult, speedMult,
     state: 'idle', stateTimer: 0, activeMove: null, hitTargetsThisSwing: null,
     moveFrame: 0, hitboxSpent: null, chainCounts: {}, lastMoveId: null, armorConsumedThisMove: false, // tech §2.4
     invulnerable: false, hitIframeTimer: 0, parryWindow: false, parrySuccess: false, clashPhase: null, clashElapsed: 0,

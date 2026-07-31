@@ -69,11 +69,27 @@ export const BOSS_KILLER_QUEEN = {
 
 /* Temporary, run-scoped buffs offered by the Treasure/Event nodes — a taste
    of Build Diversity (§4) without a persisted Arrow pool, which is out of
-   scope for this prototype milestone (§15 step 1: zero meta-progression). */
+   scope for this prototype milestone (§15 step 1: zero meta-progression).
+
+   Phase 3: ported off three bespoke fighter.js fields (`powerMult`,
+   `speedMult`, a maxPersistence bonus) onto the hooks.js query pipeline —
+   `queries[]` is installed by effect_lib.js's installRunBuffs() into the
+   getDamage/getMaxPersistence/getMoveSpeed query hooks, the same generic
+   mechanism a real Arrow will use later. Zero engine code is specific to
+   any one of these three ids. */
 export const RUN_BUFFS = [
-  { id: 'power', label: 'STAR-SHAPED FRAGMENT', desc: '+15% Power for this run', powerMult: 1.15 },
-  { id: 'persistence', label: 'ARROW SLIVER', desc: '+20 max Persistence for this run', maxPersistenceBonus: 20 },
-  { id: 'speed', label: 'CRACKED HOURGLASS', desc: '+12% move speed for this run', speedMult: 1.12 }
+  {
+    id: 'power', label: 'STAR-SHAPED FRAGMENT', desc: '+15% Power for this run',
+    queries: [{ hook: 'getDamage', fn: 'multiplyIfPlayerAttacker', data: { mult: 1.15 } }]
+  },
+  {
+    id: 'persistence', label: 'ARROW SLIVER', desc: '+20 max Persistence for this run',
+    queries: [{ hook: 'getMaxPersistence', fn: 'addFlat', data: { amount: 20 } }]
+  },
+  {
+    id: 'speed', label: 'CRACKED HOURGLASS', desc: '+12% move speed for this run',
+    queries: [{ hook: 'getMoveSpeed', fn: 'multiplyFlat', data: { mult: 1.12 } }]
+  }
 ];
 
 export const EVENTS = {
