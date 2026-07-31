@@ -125,7 +125,8 @@ export function drawHUD(g, W, H, combat, tsec) {
    layer so they never get shaken or tinted with the scene */
 export function drawBanner(g, W, H, combat, tsec) {
   if (combat.bannerTimer > 0) {
-    const k = Math.min(1, combat.bannerTimer / 300);
+    // bannerTimer is whole sim frames (tech §5 Phase 1); 18 frames == 300ms
+    const k = Math.min(1, combat.bannerTimer / 18);
     const w = textWidth(combat.banner, 2) + 24;
     g.save();
     g.globalAlpha = k;

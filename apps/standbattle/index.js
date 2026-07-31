@@ -219,7 +219,7 @@ export default {
       else if (state.scene === 'title') drawTitle(g, W, H, tsec, cleared);
       else if (state.scene === 'complete') drawComplete(g, W, H, state.runState, tsec);
       info.textContent = state.scene === 'combat'
-        ? 'A/D MOVE  J/K/L ATTACK  SPACE DODGE  SHIFT PARRY  U SPECIAL  I RUSH'
+        ? 'A/D MOVE  W/S DEPTH  J/K/L ATTACK  SPACE DODGE  SHIFT PARRY  U SPECIAL  I RUSH'
         : 'CLICK TO CONTINUE';
     }
     raf = requestAnimationFrame(frame);

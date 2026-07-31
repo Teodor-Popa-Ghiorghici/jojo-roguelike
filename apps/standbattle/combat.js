@@ -1,40 +1,65 @@
 /* Combat engine — §2.1/§2.3/§5. Orchestrates the player Stand and one
-   enemy/boss along a single lane. Telegraphs every enemy heavy attack,
-   keeps dodge (i-frames) and parry (tight counter window) as distinct
-   mechanics, and routes hit/kill/damage events through the hook
+   enemy/boss on the belt plane (x, z). Telegraphs every enemy heavy
+   attack, keeps dodge (i-frames) and parry (tight counter window) as
+   distinct mechanics, and routes hit/kill/damage events through the hook
    dispatcher so future content (Arrows, evolutions) never needs to touch
-   this file. */
+   this file.
+
+   Phase 1 (tech §5): the sim now steps in whole frames at a fixed 60Hz
+   rate (sim_loop.js) instead of being driven directly by rAF's variable
+   ms delta, and `combat.entities` holds every fighter generically
+   (fighter.js's entity/component store) instead of two hardcoded
+   variables. The fight logic itself is unchanged -- still exactly one
+   player vs one enemy, hit detection still one axis -- because Phase 1
+   explicitly excludes hitboxes, frame-data timelines and crowd combat;
+   those are tech §5 Phase 2. Enemy-side stepping lives in
+   combat_enemy.js, split out to keep both files under the repo's
+   300-line rule. */
 
 import { MOVES, STANDS } from './data.js';
-import { PATTERNS, createEnemyAI, stepEnemyAI, defaultApproachRange } from './ai.js';
+import { createEnemyAI } from './ai.js';
 import { createPlayerFighter, createEnemyFighter, applyDamage, clampPersistence, DODGE_CHARGE_MAX } from './fighter.js';
 import { createDispatcher } from './hooks.js';
 import { createJuice } from './juice.js';
-import { ARENA_MIN, ARENA_MAX } from './arena_bounds.js';
+import { createFixedStepLoop } from './sim_loop.js';
+import { stepEnemyMovementAndAI, updateEnemyPhase } from './combat_enemy.js';
+import { ARENA_MIN, ARENA_MAX, ARENA_Z_MIN, ARENA_Z_MAX, SIM_HZ, FRAME_MS, DEATH_ANIM_FRAMES } from './constants.js';
 
-const DODGE_MS = 260, DODGE_IFRAME_MS = 200, PARRY_MS = 200;
-const DODGE_RECHARGE_MS = 1400; // GDD §3.7: 2 charges, 1.4s recharge each
-const PLAYER_SPEED = 172;
-const DEATH_ANIM_MS = 900;
-const INPUT_BUFFER_MS = 150; // ~9 frames @60Hz, spec §3.6 -- inputs made
-                              // during recovery/windup are queued, not dropped
+/* Every timer below is a whole sim frame at SIM_HZ (60), not milliseconds
+   (tech §5 Phase 1: "convert all remaining ms-based timing to frames").
+   The ms comment on each is the pre-Phase-1 authored value. */
+const DODGE_FRAMES = 16, DODGE_IFRAME_FRAMES = 12, PARRY_FRAMES = 12; // 260/200/200ms
+const DODGE_RECHARGE_FRAMES = 84; // GDD §3.7: 2 charges, 1.4s recharge each -- 1400ms
+const INPUT_BUFFER_FRAMES = 9; // 150ms -- matches tech §3.6's "9-frame buffer" exactly
+const HURT_FLASH_FRAMES = 9; // 150ms fade
+const PARRY_SUCCESS_RECOVER_FRAMES = 4; // 60ms -- tight parry rewards a fast return to idle
+const PARRY_WHIFF_RECOVER_FRAMES = 9; // 150ms -- punishable, unlike a dodge's clean exit
+const HITSTUN_FRAMES = 16; // 260ms
+const PLAYER_SPEED_PER_FRAME = 172 / SIM_HZ; // 172px/sec authored speed, resolved once
 const ACTION_KEYS = new Set(['light', 'medium', 'heavy', 'special', 'rush', 'dodge', 'parry']);
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
 export function createCombat(enemyDef, runBuffs, opts, rng) {
   opts = opts || {};
   const stand = STANDS.star_platinum;
-  const player = createPlayerFighter(stand, 180, runBuffs);
-  const enemy = createEnemyFighter(enemyDef, 470, opts.hpMult, opts.speedMult, opts.tint);
+  const player = createPlayerFighter(stand, ARENA_MIN + 122, runBuffs);
+  const enemy = createEnemyFighter(enemyDef, ARENA_MAX - 72, opts.hpMult, opts.speedMult, opts.tint);
   const isBoss = !!enemyDef.phases;
   const aiRng = rng.stream('ai');
   enemy.ai = createEnemyAI(isBoss ? enemyDef.phases[0].attackPatterns : enemyDef.attackPatterns);
+  enemy.brain = enemy.ai; // Brain component (tech §2.3): the AI profile/module list fighter.js reserved
 
   const dispatcher = createDispatcher();
   const juice = createJuice(opts.shakeEnabled);
   const keys = {};
+  /* combat.entities is the arena's real entity store (tech §2.3): "the
+     arena holds N entities, not player + enemy". combat.player/.enemy
+     stay as named references into it so the render/pose/HUD/audio layers
+     -- none of which this phase touches -- keep working unmodified. */
   const combat = {
-    player, enemy, juice, dispatcher, isBoss,
-    outcome: 'fighting', banner: enemyDef.name || enemyDef.standName, bannerTimer: 1400,
+    player, enemy, entities: [player, enemy], juice, dispatcher, isBoss,
+    outcome: 'fighting', banner: enemyDef.name || enemyDef.standName, bannerTimer: 84, // 1400ms
     log: []
   };
 
@@ -54,7 +79,7 @@ export function createCombat(enemyDef, runBuffs, opts, rng) {
     keys[code] = down;
     if (down && !was && ACTION_KEYS.has(code)) {
       if (player.state === 'idle') performAction(code);
-      else player.bufferedAction = { kind: code, timer: INPUT_BUFFER_MS };
+      else player.bufferedAction = { kind: code, timer: INPUT_BUFFER_FRAMES };
     }
   };
 
@@ -62,7 +87,7 @@ export function createCombat(enemyDef, runBuffs, opts, rng) {
     player.state = 'attack';
     player.activeMove = move;
     player.movePhase = 'windup';
-    player.stateTimer = move.windupMs;
+    player.stateTimer = move.windupFrames;
     player.hitsLanded = 0;
     if (move.persistenceCost) { player.persistence -= move.persistenceCost; clampPersistence(player); }
   }
@@ -80,20 +105,20 @@ export function createCombat(enemyDef, runBuffs, opts, rng) {
     if (player.dodgeCharges <= 0) { dispatcher.fire('onMoveDenied', {}); return; }
     player.dodgeCharges--;
     player.state = 'dodge';
-    player.stateTimer = DODGE_MS;
+    player.stateTimer = DODGE_FRAMES;
     player.invulnerable = true;
     player.dodgeDir = enemy.x > player.x ? -1 : 1;
   }
 
-  function updateDodgeCharges(dt) {
+  function updateDodgeCharges() {
     if (player.dodgeCharges < DODGE_CHARGE_MAX) {
-      player.dodgeRechargeMs += dt;
-      if (player.dodgeRechargeMs >= DODGE_RECHARGE_MS) {
-        player.dodgeRechargeMs -= DODGE_RECHARGE_MS;
+      player.dodgeRechargeFrames++;
+      if (player.dodgeRechargeFrames >= DODGE_RECHARGE_FRAMES) {
+        player.dodgeRechargeFrames -= DODGE_RECHARGE_FRAMES;
         player.dodgeCharges++;
       }
     } else {
-      player.dodgeRechargeMs = 0;
+      player.dodgeRechargeFrames = 0;
     }
   }
 
@@ -106,14 +131,14 @@ export function createCombat(enemyDef, runBuffs, opts, rng) {
   function startParry() {
     if (player.state !== 'idle') return;
     player.state = 'parry';
-    player.stateTimer = PARRY_MS;
+    player.stateTimer = PARRY_FRAMES;
     player.parryWindow = true;
   }
 
   function resolvePlayerHitWindow() {
     const m = player.activeMove;
-    const hitEvery = m.activeMs / m.hitCount;
-    const elapsed = m.activeMs - player.stateTimer;
+    const hitEvery = m.activeFrames / m.hitCount;
+    const elapsed = m.activeFrames - player.stateTimer;
     const shouldHave = Math.min(m.hitCount, Math.floor(elapsed / hitEvery) + 1);
     while (player.hitsLanded < shouldHave) {
       player.hitsLanded++;
@@ -130,7 +155,7 @@ export function createCombat(enemyDef, runBuffs, opts, rng) {
         juice.spawnBurst(enemy.x, 154, '#FFFF55', dead ? 18 : 6, 90, player.facing, -0.4);
         dispatcher.fire('onHit', { moveType: m.type, combo: player.comboCount, finishing: dead });
         if (dead) {
-          enemy.deathTimer = DEATH_ANIM_MS;
+          enemy.deathTimer = DEATH_ANIM_FRAMES;
           dispatcher.fire('onKill', { combo: player.comboCount });
           combat.outcome = 'win';
         }
@@ -138,6 +163,10 @@ export function createCombat(enemyDef, runBuffs, opts, rng) {
     }
   }
 
+  /* Player-side hit resolution against an incoming enemy attack (melee or
+     projectile). Kept here rather than in combat_enemy.js because it
+     needs the player's full state (dodge/parry/hp), not just the enemy's;
+     combat_enemy.js calls it back as a callback. */
   function resolveIncomingHit(pattern, atX) {
     const dist = Math.abs(atX - player.x);
     if (dist > pattern.range) return;
@@ -151,7 +180,7 @@ export function createCombat(enemyDef, runBuffs, opts, rng) {
       push('PARRIED!');
       player.parrySuccess = true;
       player.parryWindow = false;
-      player.stateTimer = 60; // tight parry rewards a fast return to idle
+      player.stateTimer = PARRY_SUCCESS_RECOVER_FRAMES;
       juice.triggerHitstop(120);
       juice.triggerShake(-player.facing, 0, 6, 160);
       juice.spawnBurst(player.x, 154, '#FFFFFF', 14, 110);
@@ -160,7 +189,7 @@ export function createCombat(enemyDef, runBuffs, opts, rng) {
       const dead = applyDamage(enemy, dmg);
       enemy.knockVx = (enemy.x >= player.x ? 1 : -1) * 14;
       if (dead) {
-        enemy.deathTimer = DEATH_ANIM_MS;
+        enemy.deathTimer = DEATH_ANIM_FRAMES;
         dispatcher.fire('onKill', { combo: player.comboCount });
         combat.outcome = 'win';
       }
@@ -175,48 +204,52 @@ export function createCombat(enemyDef, runBuffs, opts, rng) {
     juice.spawnBurst(player.x, 154, '#FF5555', 10, 100);
     dispatcher.fire('onDamageTaken', { dmg, heavy: pattern.dmgMult > 1.5 });
     player.state = dead ? 'dead' : 'hitstun';
-    player.stateTimer = 260;
+    player.stateTimer = HITSTUN_FRAMES;
     player.invulnerable = false;
     player.parryWindow = false;
     if (dead) { combat.outcome = 'lose'; }
   }
 
-  function updatePlayer(dt) {
-    if (player.hurtFlash > 0) player.hurtFlash = Math.max(0, player.hurtFlash - dt / 150);
+  function updatePlayer() {
+    if (player.hurtFlash > 0) player.hurtFlash = Math.max(0, player.hurtFlash - 1 / HURT_FLASH_FRAMES);
     if (player.knockVx) { player.x += player.knockVx; player.knockVx *= 0.8; if (Math.abs(player.knockVx) < 0.3) player.knockVx = 0; }
-    player.x = Math.max(ARENA_MIN, Math.min(ARENA_MAX, player.x));
+    player.x = clamp(player.x, ARENA_MIN, ARENA_MAX);
     player.facing = enemy.x >= player.x ? 1 : -1;
-    updateDodgeCharges(dt);
+    updateDodgeCharges();
     if (player.bufferedAction) {
-      player.bufferedAction.timer -= dt;
+      player.bufferedAction.timer -= 1;
       if (player.bufferedAction.timer <= 0) player.bufferedAction = null;
     }
 
     if (player.state === 'idle') {
-      let mv = 0;
+      let mv = 0, mz = 0;
       if (keys.left) mv -= 1;
       if (keys.right) mv += 1;
-      player.moving = mv !== 0;
-      player.x = Math.max(ARENA_MIN, Math.min(ARENA_MAX, player.x + mv * PLAYER_SPEED * player.speedMult * dt / 1000));
+      if (keys.forward) mz -= 1; // belt plane depth (tech §5 Phase 1): toward the camera
+      if (keys.back) mz += 1; // away from the camera
+      player.moving = mv !== 0 || mz !== 0;
+      const step = PLAYER_SPEED_PER_FRAME * player.speedMult;
+      player.x = clamp(player.x + mv * step, ARENA_MIN, ARENA_MAX);
+      player.z = clamp(player.z + mz * step, ARENA_Z_MIN, ARENA_Z_MAX);
       return;
     }
-    player.stateTimer -= dt;
+    player.stateTimer -= 1;
     if (player.state === 'attack') {
       const m = player.activeMove;
       if (player.movePhase === 'windup' && player.stateTimer <= 0) {
-        player.movePhase = 'active'; player.stateTimer = m.activeMs;
+        player.movePhase = 'active'; player.stateTimer = m.activeFrames;
       } else if (player.movePhase === 'active') {
         resolvePlayerHitWindow();
-        if (player.stateTimer <= 0) { player.movePhase = 'recover'; player.stateTimer = m.recoverMs; }
+        if (player.stateTimer <= 0) { player.movePhase = 'recover'; player.stateTimer = m.recoverFrames; }
       } else if (player.movePhase === 'recover' && player.stateTimer <= 0) {
         player.state = 'idle'; player.activeMove = null;
         tryConsumeBuffer();
       }
     } else if (player.state === 'dodge') {
-      if (DODGE_MS - player.stateTimer < DODGE_IFRAME_MS) {
-        player.x = Math.max(ARENA_MIN, Math.min(ARENA_MAX, player.x + player.dodgeDir * PLAYER_SPEED * 1.6 * dt / 1000));
+      if (DODGE_FRAMES - player.stateTimer < DODGE_IFRAME_FRAMES) {
+        player.x = clamp(player.x + player.dodgeDir * PLAYER_SPEED_PER_FRAME * 1.6, ARENA_MIN, ARENA_MAX);
       }
-      if (DODGE_MS - player.stateTimer >= DODGE_IFRAME_MS) player.invulnerable = false;
+      if (DODGE_FRAMES - player.stateTimer >= DODGE_IFRAME_FRAMES) player.invulnerable = false;
       if (player.stateTimer <= 0) {
         player.state = 'idle'; player.invulnerable = false;
         tryConsumeBuffer();
@@ -226,7 +259,7 @@ export function createCombat(enemyDef, runBuffs, opts, rng) {
         // window closed with no incoming hit -- a whiffed parry earns a
         // short punishable recovery, unlike a dodge's clean "safe" exit
         player.parryWindow = false;
-        player.stateTimer = 150;
+        player.stateTimer = PARRY_WHIFF_RECOVER_FRAMES;
       } else if (!player.parryWindow && player.stateTimer <= 0) {
         player.state = 'idle'; player.parrySuccess = false;
         tryConsumeBuffer();
@@ -239,73 +272,23 @@ export function createCombat(enemyDef, runBuffs, opts, rng) {
     }
   }
 
-  function updateEnemyPhase() {
-    if (!isBoss || enemy.state !== 'alive') return;
-    const frac = enemy.hp / enemy.maxHp;
-    const next = enemy.phaseIndex + 1;
-    const phases = enemyDef.phases;
-    if (next < phases.length && frac <= phases[enemy.phaseIndex].hpAbove) {
-      enemy.phaseIndex = next;
-      enemy.ai.patternIds = phases[next].attackPatterns;
-      enemy.ai.approachRange = defaultApproachRange(phases[next].attackPatterns);
-      enemy.invulnUntil = 500;
-      combat.banner = enemyDef.transitionLine || 'PHASE 2';
-      combat.bannerTimer = 1800;
-      juice.triggerHitstop(160);
-      juice.triggerShake(0, -1, 8, 260);
-      dispatcher.fire('onPhaseTransition', {});
-    }
-  }
-
-  function updateEnemy(dt) {
-    if (enemy.hp <= 0) {
-      if (enemy.deathTimer > 0) enemy.deathTimer = Math.max(0, enemy.deathTimer - dt);
-      if (enemy.hurtFlash > 0) enemy.hurtFlash = Math.max(0, enemy.hurtFlash - dt / 150);
-      return;
-    }
-    if (enemy.hurtFlash > 0) enemy.hurtFlash = Math.max(0, enemy.hurtFlash - dt / 150);
-    if (enemy.knockVx) { enemy.x += enemy.knockVx; enemy.knockVx *= 0.82; if (Math.abs(enemy.knockVx) < 0.3) enemy.knockVx = 0; }
-    enemy.x = Math.max(ARENA_MIN, Math.min(ARENA_MAX, enemy.x));
-    enemy.facing = player.x >= enemy.x ? 1 : -1;
-    if (enemy.invulnUntil > 0) { enemy.invulnUntil -= dt; return; }
-
-    const dist = Math.abs(player.x - enemy.x);
-    enemy.moving = false;
-    if (enemy.ai.state === 'approach') {
-      const dir = player.x > enemy.x ? 1 : -1;
-      if (dist > enemy.ai.approachRange) { enemy.x += dir * enemy.speedPx * dt / 1000; enemy.moving = true; }
-    }
-    const wasWindup = enemy.ai.state === 'windup';
-    const ev = stepEnemyAI(enemy.ai, Math.abs(player.x - enemy.x), dt, aiRng);
-    if (!wasWindup && enemy.ai.state === 'windup') dispatcher.fire('onTelegraphStart', { pattern: enemy.ai.pattern });
-    if (ev && ev.type === 'spawnMelee') {
-      resolveIncomingHit(ev.pattern, enemy.x);
-    } else if (ev && ev.type === 'spawnProjectile') {
-      enemy.projectiles.push({ x: enemy.x, dir: player.x >= enemy.x ? 1 : -1, pattern: ev.pattern, life: ev.pattern.activeMs });
-    }
-    updateEnemyPhase();
-
-    for (let i = enemy.projectiles.length - 1; i >= 0; i--) {
-      const pr = enemy.projectiles[i];
-      pr.life -= dt;
-      if (pr.homing === undefined) pr.homing = pr.pattern.homing;
-      if (pr.homing) pr.dir = player.x >= pr.x ? 1 : -1;
-      pr.x += pr.dir * pr.pattern.projectileSpeed * dt / 1000;
-      if (Math.abs(pr.x - player.x) < 10) { resolveIncomingHit(pr.pattern, pr.x); enemy.projectiles.splice(i, 1); continue; }
-      if (pr.life <= 0 || pr.x < ARENA_MIN - 20 || pr.x > ARENA_MAX + 20) enemy.projectiles.splice(i, 1);
-    }
-  }
-
-  combat.update = dt => {
+  /* One whole sim frame. No canvas, no DOM, no rAF -- headless_harness.js
+     drives this same function directly through combat.step(). */
+  function stepFrame() {
     if (combat.outcome !== 'fighting') return;
-    if (combat.bannerTimer > 0) combat.bannerTimer -= dt;
-    if (juice.update(dt)) return;
-    updatePlayer(dt);
-    updateEnemy(dt);
+    if (combat.bannerTimer > 0) combat.bannerTimer -= 1;
+    if (juice.update(FRAME_MS)) return; // hit-stop freezes the sim; see the Phase 1 report
+    updatePlayer();
+    stepEnemyMovementAndAI(combat, enemyDef, aiRng, resolveIncomingHit);
     if (player.hp <= 0 && combat.outcome === 'fighting') combat.outcome = 'lose';
-  };
+  }
+
+  const loop = createFixedStepLoop(stepFrame);
+  /* Real usage (index.js's rAF loop): feed real elapsed ms, the fixed
+     accumulator turns it into zero or more whole-frame steps. */
+  combat.update = dtMs => { loop.advance(dtMs); };
+  /* Headless/testing usage: advance exactly one frame, no wall clock. */
+  combat.step = () => loop.stepOnce();
 
   return combat;
 }
-
-export { PATTERNS };
