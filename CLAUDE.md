@@ -46,6 +46,7 @@ Not all extracted yet, but typically `#FFFFFF`, `#AAAAAA`, `#555555`, `#FFFF55` 
 
 ## Apps
 - `placeholder`: `apps/placeholder/index.js` - A trivial app to test the window manager.
+- `standbattle`: `apps/standbattle/index.js` - Stand Battle Arena, a JoJo's Bizarre Adventure roguelike combat prototype (see `docs/stand-battle-arena-spec.md`). Playable Jotaro Kujo/Star Platinum vs. Morioh enemies and boss Yoshikage Kira/Killer Queen, across a 6-node Act 1 (Morioh) map. Implements the spec's Prototype milestone (§15 step 1): telegraphed enemy attacks, dodge (i-frames) vs. parry (tight counter window) as distinct mechanics, hit-stop/screen-shake/particle juice with a shake accessibility toggle, an effect-hook dispatcher (`hooks.js`), and a shared enemy attack-pattern module library (`ai.js`). Zero meta-progression by design; internal 384×216 canvas, integer-only upscale, 16-colour VGA palette throughout.
 
 ## Rules
 - Apps never import from `kernel/`.
