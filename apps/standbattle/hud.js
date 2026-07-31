@@ -82,14 +82,22 @@ export function drawHUD(g, W, H, combat, tsec) {
     ['#0B2E4A', '#12587E', '#1E93B8', '#4FD0E6', '#C4F6FF']);
   text(g, 'PERSISTENCE', 158, 30, { scale: 1, color: '#5FA8C8' });
 
+  /* Momentum (GDD §3.8) -- the aggression resource: +40% damage at 100,
+     gates Stand Rush. Replaces the old combo counter as the mechanical
+     readout; comboCount itself lives on for the pose/fx/audio flavour
+     layer only (see resources.js). */
+  bar(g, 40, 40, 112, 6, player.momentum / 100, 0,
+    ['#4A3B0B', '#7E6812', '#B89A1E', '#E6C94F', '#FFF6C4']);
+  text(g, 'MOMENTUM', 158, 40, { scale: 1, color: '#C8A83A' });
+
   /* dodge charges (§3.7): 2 pips so "holding to stay safe" has a visible
      cost again -- direct feedback for tech audit item #1's fix */
   for (let i = 0; i < DODGE_CHARGE_MAX; i++) {
     const on = i < player.dodgeCharges;
-    px(g, 40 + i * 10, 40, 7, 5, on ? '#5FE0FF' : '#1A3040');
-    px(g, 40 + i * 10, 40, 7, 2, on ? '#C8F8FF' : '#243C48');
+    px(g, 40 + i * 10, 50, 7, 5, on ? '#5FE0FF' : '#1A3040');
+    px(g, 40 + i * 10, 50, 7, 2, on ? '#C8F8FF' : '#243C48');
   }
-  text(g, 'STEP', 64, 40, { scale: 1, color: '#5FA8C8' });
+  text(g, 'STEP', 64, 50, { scale: 1, color: '#5FA8C8' });
 
   if (enemy.hp > 0 || (enemy.deathTimer || 0) > 0) {
     const name = enemy.def.standName || enemy.def.name;

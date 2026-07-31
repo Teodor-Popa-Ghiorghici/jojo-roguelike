@@ -18,6 +18,7 @@ import { drawBackground, drawForeground } from './background.js';
 import { drawHUD, drawBanner } from './hud.js';
 import { createFx, wireFx } from './fx.js';
 import { sceneEvents, telegraph, projectiles, particles, groundDust } from './arena.js';
+import { drawDebugOverlay } from './debug_overlay.js';
 import { text } from './font.js';
 import { FX, JOTARO, S, SH, BASE, LT, RIM } from './palette.js';
 import { WORLD_W, GROUND_Y } from './constants.js';
@@ -175,6 +176,7 @@ export function drawCombat(g, W, H, combat, tsec, dtMs, nodeId) {
   particles(g, juice, camX);
   fx.draw(g, W, H);
   drawForeground(g, W, H, scene, camX, tsec, GROUND_Y);
+  if (combat.debug) drawDebugOverlay(g, W, H, combat, camX); // Phase 2 deliverable 8 -- additive only
   g.restore();
 
   drawHUD(g, W, H, combat, tsec);
