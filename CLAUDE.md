@@ -59,6 +59,11 @@ Not all extracted yet, but typically `#FFFFFF`, `#AAAAAA`, `#555555`, `#FFFF55` 
   - `arena.js` — attack telegraphs, projectiles, particles and the render-only reactions (swing arcs, footfall dust, stagger scuffs) that watch combat state without the simulation knowing they exist.
   - `render.js` — camera, parallax, sprite stamping (outline + cast shadow + scene rim light + squash), HUD.
   This deliberately goes beyond the machine's base 16-colour/no-antialiasing rule below — an explicit exception for this app's content, requested by the user; canvas smoothing stays off and everything still snaps to whole pixels. Sound is a real 3-layer SFX design with combo-pitch escalation (`audio.js`) plus a from-scratch adaptive chiptune engine (`music.js`, its own Web Audio gain bus wired to the machine's MUS knob, independent of the SFX bus) with explore/combat/tension intensity layers.
+  **Design documents — read before changing gameplay:**
+  - `docs/stand-battle-arena-spec.md` — the technical contract (architecture, pixel pipeline, audio, fairness constraints). Binding for architecture and rendering.
+  - `docs/stand-battle-arena-gdd.md` — the game design document: the User/Stand duality that is the core mechanic, the three Stand Classes, run structure, the six item layers (Fragments / Requiem / Relics / Discs / Aspects / economy), difficulty axes, meta-progression, and the 40-hour content math. Binding for gameplay.
+  - `docs/stand-battle-arena-tech.md` — audit of the shipped prototype, the engine systems the GDD requires (effect pipeline, stat pipeline, frame data, 2.5D arena, seeded RNG, content validator), data schemas and build order.
+  There is **no line budget** on this project — the engine may be as large as the design needs. The constraint is generality: content is data, never a new code path.
 
 ## Rules
 - Apps never import from `kernel/`.
