@@ -52,9 +52,12 @@ export default {
     bar.className = 'appbar';
     const shakeBtn = document.createElement('button');
     shakeBtn.className = 'appbtn';
+    const debugBtn = document.createElement('button');
+    debugBtn.className = 'appbtn';
     const info = document.createElement('span');
     info.className = 'godword sbinfo';
     bar.appendChild(shakeBtn);
+    bar.appendChild(debugBtn);
     bar.appendChild(info);
 
     root.appendChild(pane);
@@ -87,6 +90,19 @@ export default {
       if (window.Snd) window.Snd.click();
     });
 
+    /* Debug overlay toggle (tech §2.4/§2.5 deliverable 8): hitboxes,
+       hurtboxes, current frame, active windows, poise, i-frames. */
+    let debugEnabled = false;
+    function updateDebugBtn() { debugBtn.textContent = 'DEBUG: ' + (debugEnabled ? 'ON' : 'OFF'); }
+    updateDebugBtn();
+    debugBtn.addEventListener('mousedown', ev => {
+      ev.stopPropagation();
+      debugEnabled = !debugEnabled;
+      if (state.combat) state.combat.debug = debugEnabled;
+      updateDebugBtn();
+      if (window.Snd) window.Snd.click();
+    });
+
     function persistRun() { saveStore.saveRun(state.runState); }
 
     function newRun() {
@@ -111,6 +127,7 @@ export default {
       const combat = createCombat(enemyDef, state.runState.buffs, opts, state.runRng);
       combat.player.hp = state.runState.hp;
       combat.player.maxHp = state.runState.maxHp;
+      combat.debug = debugEnabled;
       wireCombatAudio(combat);
       musicSetIntensity(1);
       state.combat = combat;
@@ -219,7 +236,7 @@ export default {
       else if (state.scene === 'title') drawTitle(g, W, H, tsec, cleared);
       else if (state.scene === 'complete') drawComplete(g, W, H, state.runState, tsec);
       info.textContent = state.scene === 'combat'
-        ? 'A/D MOVE  W/S DEPTH  J/K/L ATTACK  SPACE DODGE  SHIFT PARRY  U SPECIAL  I RUSH'
+        ? 'A/D MOVE  W/S DEPTH  J/K/L ATTACK  SPACE STEP  SHIFT CLASH  G GUARD  U SPECIAL  I RUSH'
         : 'CLICK TO CONTINUE';
     }
     raf = requestAnimationFrame(frame);

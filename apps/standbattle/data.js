@@ -25,54 +25,25 @@ export const STANDS = {
   }
 };
 
-/* Move definitions. windup/active/recover are whole frames at the sim's
-   fixed 60Hz step (tech §5 Phase 1: "convert all remaining ms-based
-   timing to frames") -- the ms figures in each comment are the pre-Phase-1
-   authored values, kept only so the numbers are traceable. hitstopMs stays
-   milliseconds: hit-stop is driven by juice.js, which is deliberately left
-   on the real-time render clock (§10; see the Phase 1 report for why),
-   following §10 (3-5 frames light ~= 50-83ms, up to 8 frames ~= 133ms on
-   heavies/rush). */
-export const MOVES = {
-  sp_light: {
-    id: 'sp_light', type: 'light', persistenceCost: 0, persistenceGain: 5,
-    windupFrames: 3, activeFrames: 5, recoverFrames: 8, range: 62, // 50/90/130ms
-    hitCount: 1, damage: 4, knockback: 9, hitstopMs: 55, label: 'JAB'
-  },
-  sp_medium: {
-    id: 'sp_medium', type: 'medium', persistenceCost: 0, persistenceGain: 8,
-    windupFrames: 7, activeFrames: 7, recoverFrames: 11, range: 68, // 110/110/190ms
-    hitCount: 1, damage: 8, knockback: 16, hitstopMs: 70, label: 'STRIKE'
-  },
-  sp_heavy: {
-    id: 'sp_heavy', type: 'heavy', persistenceCost: 0, persistenceGain: 12,
-    windupFrames: 14, activeFrames: 8, recoverFrames: 20, range: 76, // 230/130/340ms
-    hitCount: 1, damage: 15, knockback: 28, hitstopMs: 110, label: 'HEAVY'
-  },
-  sp_barrage: {
-    id: 'sp_barrage', type: 'special', persistenceCost: 35, persistenceGain: 0,
-    windupFrames: 5, activeFrames: 16, recoverFrames: 13, range: 66, // 90/260/220ms
-    hitCount: 4, damage: 4, knockback: 5, hitstopMs: 45, label: 'ORA BARRAGE'
-  },
-  sp_ora_rush: {
-    id: 'sp_ora_rush', type: 'rush', persistenceCost: 80, persistenceGain: 0,
-    windupFrames: 8, activeFrames: 37, recoverFrames: 18, range: 78, // 140/620/300ms
-    hitCount: 9, damage: 5, knockback: 4, hitstopMs: 130, label: 'ORA ORA ORA!'
-  }
-};
+/* Move definitions moved to moves.js (tech §2.4 frame-data timeline shape,
+   Phase 2). Re-exported here so existing `import { MOVES } from './data.js'`
+   call sites keep working without churn. */
+export { MOVES } from './moves.js';
 
 /* Enemy definitions. attackPatterns reference the shared module library in
    ai.js — per §9, boss variety comes from recombining these, not bespoke
-   code per enemy. */
+   code per enemy. `poise` (GDD §3.9) is the hit count of poise damage the
+   enemy can absorb before staggering -- resolved once by poise.js, never
+   read as a raw number anywhere else. */
 export const ENEMIES = {
   morioh_thug: {
     id: 'morioh_thug', name: 'MORIOH DELINQUENT', baseType: 'melee',
-    hp: 40, power: 5, speedPx: 122, precision: 3,
+    hp: 40, power: 5, speedPx: 122, precision: 3, poise: 24,
     attackPatterns: ['sweep', 'telegraphed_slam']
   },
   angelo: {
     id: 'angelo', name: 'ANGELO', baseType: 'elite',
-    hp: 78, power: 7, speedPx: 165, precision: 6,
+    hp: 78, power: 7, speedPx: 165, precision: 6, poise: 50,
     attackPatterns: ['sweep', 'projectile', 'telegraphed_slam']
   }
 };
@@ -88,7 +59,7 @@ export const MODIFIERS = {
 export const BOSS_KILLER_QUEEN = {
   id: 'killer_queen', character: 'Yoshikage Kira', standName: 'Killer Queen',
   source: 'Diamond is Unbreakable (Part 4)',
-  hp: 200, power: 9, speedPx: 140, precision: 8,
+  hp: 200, power: 9, speedPx: 140, precision: 8, poise: 70,
   phases: [
     { hpAbove: 0.5, attackPatterns: ['sweep', 'telegraphed_slam', 'projectile'] },
     { hpAbove: 0, attackPatterns: ['sweep', 'telegraphed_slam', 'projectile', 'sheer_heart_attack'] }

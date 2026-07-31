@@ -29,17 +29,17 @@ export function sceneEvents(combat, fx, ppose, epose, camX, tsec) {
       if (p.movePhase === 'active' && p.activeMove.type !== 'rush') {
         const heavy = p.activeMove.type === 'heavy';
         fx.spawn('arc', {
-          x: px0 + p.facing * 6, y: pY - 62, r: p.activeMove.range * 0.62,
+          x: px0 + p.facing * 6, y: pY - 62, r: p.activeMove.reach * 0.62,
           dir: p.facing, life: heavy ? 0.26 : 0.18, sweep: heavy ? 2.1 : 1.4, a0: -1.35,
           color: heavy ? FX.spark[2] : FX.spark[3]
         });
       }
     }
-    if (p.movePhase === 'windup' && (p.activeMove.type === 'heavy' || p.activeMove.persistenceCost)) {
+    if (p.movePhase === 'windup' && (p.activeMove.type === 'heavy' || p.activeMove.costs.persistence)) {
       if (Math.random() < 0.4) {
         fx.spawn('charge', {
           x: px0 + p.facing * 14, y: pY - 70, life: 0.3,
-          color: p.activeMove.persistenceCost ? FX.aura[4] : FX.spark[3]
+          color: p.activeMove.costs.persistence ? FX.aura[4] : FX.spark[3]
         });
       }
     }
@@ -87,6 +87,30 @@ export function sceneEvents(combat, fx, ppose, epose, camX, tsec) {
 
 /* ---- world extras ------------------------------------------------------ */
 
+/* GDD §21 accessibility: colour alone fails ~8% of players, so every
+   telegraph also carries a distinct outline glyph over the enemy's head --
+   ring = sweep, chevron = slam, crosshair = ranged (Phase 2 deliverable 7).
+   `glyph` is data on the pattern (ai.js); this is the only place that
+   reads it, so a future pattern just picks one of these three shapes
+   instead of this function growing a branch per pattern id. */
+function drawGlyph(g, glyph, x, y, k, color) {
+  const pulse = 0.55 + 0.45 * Math.sin(k * 14);
+  g.save();
+  g.globalAlpha = pulse;
+  if (glyph === 'ring') {
+    ring(g, x, y + 4, 8, 2, color, 0.9);
+    ring(g, x, y + 4, 4, 1, '#FFFFFF', 0.9);
+  } else if (glyph === 'crosshair') {
+    line(g, x - 9, y + 4, x + 9, y + 4, 1, color);
+    line(g, x, y - 5, x, y + 13, 1, color);
+    ring(g, x, y + 4, 5, 1, '#FFFFFF', 0.9);
+  } else {
+    poly(g, [[x - 7, y], [x + 7, y], [x, y + 9]], color);
+    poly(g, [[x - 4, y + 1], [x + 4, y + 1], [x, y + 6]], '#FFFFFF');
+  }
+  g.restore();
+}
+
 export function telegraph(g, enemy, camX, tsec) {
   const ai = enemy.ai;
   if (!ai || ai.state !== 'windup' || !ai.pattern) return;
@@ -101,13 +125,8 @@ export function telegraph(g, enemy, camX, tsec) {
   g.globalAlpha = pulse;
   ring(g, x, gy + 2, r * (0.4 + k * 0.6), 2, ai.pattern.telegraph, 0.26);
   g.restore();
-  /* an escalating warning chevron over the enemy's head */
   const y = gy - 130 - Math.sin(tsec * 12) * 2;
-  g.save();
-  g.globalAlpha = 0.55 + 0.45 * Math.sin(tsec * 14);
-  poly(g, [[x - 7, y], [x + 7, y], [x, y + 9]], ai.pattern.telegraph);
-  poly(g, [[x - 4, y + 1], [x + 4, y + 1], [x, y + 6]], '#FFFFFF');
-  g.restore();
+  drawGlyph(g, ai.pattern.glyph || 'chevron', x, y, tsec, ai.pattern.telegraph);
   if (k > 0.55) {
     text(g, ai.pattern.label, x, y - 12, {
       scale: 1, align: 'center', color: ai.pattern.telegraph, outline: '#1A0A0A'

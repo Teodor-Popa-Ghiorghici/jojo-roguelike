@@ -45,10 +45,13 @@ export function createPlayerFighter(stand, x, runBuffs, z) {
     id: 'player', kind: 'player', stand, x, z: z == null ? Z_REST : z, facing: 1,
     hp: 100, maxHp: 100,
     persistence: 30, maxPersistence,
+    momentum: 0, framesSinceHitLanded: 0, // GDD §3.8 -- the mechanical resource comboCount used to be
     powerMult, speedMult,
     state: 'idle', stateTimer: 0, activeMove: null, hitTargetsThisSwing: null,
-    invulnerable: false, parryWindow: false, parrySuccess: false,
+    moveFrame: 0, hitboxSpent: null, chainCounts: {}, lastMoveId: null, armorConsumedThisMove: false, // tech §2.4
+    invulnerable: false, hitIframeTimer: 0, parryWindow: false, parrySuccess: false, clashPhase: null, clashElapsed: 0,
     dodgeCharges: DODGE_CHARGE_MAX, dodgeRechargeFrames: 0,
+    guarding: false, breakActive: false,
     bufferedAction: null,
     squash: 0, hurtFlash: 0, comboCount: 0, moving: false,
     brain: null // the User is player-controlled, not AI-driven
@@ -64,6 +67,7 @@ export function createEnemyFighter(def, x, hpMult, speedMult, tint, z) {
     speedPx, speedPxPerFrame: speedPx / SIM_HZ, // Speed resolves to a per-frame delta exactly once here
     tint: tint || null,
     state: 'alive', hurtFlash: 0, squash: 0, knockVx: 0, moving: false,
+    breakActive: false, // Perfect Clash's Break flag (defense.js/resolvers.js), consumed on next hit taken
     ai: null, projectiles: [], phaseIndex: 0, deathTimer: 0
   };
   attachComponentStubs(entity);
