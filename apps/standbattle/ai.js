@@ -28,8 +28,9 @@ const MELEE_MAX_RANGE = 110;
 
 /* Choose a pattern from the enemy's list, biased by distance: melee
    patterns need to be in range, ranged patterns are picked more often when
-   the player is far away. */
-export function pickPattern(patternIds, dist) {
+   the player is far away. `rng` is the run's 'ai' stream (rng.js) -- AI
+   choices must be reproducible from the run seed, never Math.random(). */
+export function pickPattern(patternIds, dist, rng) {
   const near = patternIds.filter(id => PATTERNS[id].range <= MELEE_MAX_RANGE || dist <= PATTERNS[id].range);
   const pool = near.length ? near : patternIds;
   const weighted = [];
@@ -38,7 +39,7 @@ export function pickPattern(patternIds, dist) {
     const farBias = p.ranged && dist > MELEE_MAX_RANGE ? 3 : 1;
     for (let i = 0; i < farBias; i++) weighted.push(id);
   });
-  return weighted[Math.floor(Math.random() * weighted.length)];
+  return weighted[Math.floor(rng.random() * weighted.length)];
 }
 
 /* The enemy must stop closing distance within its shortest MELEE pattern's
@@ -61,12 +62,12 @@ export function createEnemyAI(patternIds, approachRange) {
 
 /* Advances the AI state machine. Returns an event object for combat.js to
    act on ('spawnMelee' | 'spawnProjectile' | null), or null when nothing
-   new happened this tick. */
-export function stepEnemyAI(ai, dist, dtMs) {
+   new happened this tick. `rng` is the run's 'ai' stream (rng.js). */
+export function stepEnemyAI(ai, dist, dtMs, rng) {
   ai.timer -= dtMs;
   if (ai.state === 'approach') {
-    if (dist <= ai.approachRange || Math.random() < 0.002) {
-      ai.pattern = PATTERNS[pickPattern(ai.patternIds, dist)];
+    if (dist <= ai.approachRange || rng.random() < 0.002) {
+      ai.pattern = PATTERNS[pickPattern(ai.patternIds, dist, rng)];
       ai.state = 'windup';
       ai.timer = ai.pattern.windupMs;
     }
