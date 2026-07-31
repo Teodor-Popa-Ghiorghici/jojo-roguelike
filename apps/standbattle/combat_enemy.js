@@ -6,8 +6,8 @@
 
 import { stepEnemyAI, defaultApproachRange } from './ai.js';
 import { overlaps, pointOverlaps } from './hitbox.js';
-import { stepPoise } from './poise.js';
-import { resolveIncomingAttack } from './combat_player.js';
+import { stepPoise, STAGGER_FRAMES, STAGGER_DAMAGE_MULT } from './poise.js';
+import { resolveIncomingAttack } from './combat_defense.js';
 import { ARENA_MIN, ARENA_MAX, SIM_HZ } from './constants.js';
 
 const PHASE_INVULN_FRAMES = 30; // 500ms
@@ -51,7 +51,12 @@ export function stepEnemyMovementAndAI(combat, enemyDef, aiRng) {
   if (enemy.knockVx) { enemy.x += enemy.knockVx; enemy.knockVx *= 0.82; if (Math.abs(enemy.knockVx) < 0.3) enemy.knockVx = 0; }
   enemy.x = Math.max(ARENA_MIN, Math.min(ARENA_MAX, enemy.x));
   enemy.facing = player.x >= enemy.x ? 1 : -1;
-  stepPoise(enemy); // GDD §3.9: regen-after-no-hit and pending poise-break -> Stagger
+  /* GDD §3.9: regen-after-no-hit and pending poise-break -> Stagger.
+     stepPoise() returns true only the frame it actually enters Stagger, so
+     onStaggerStart (tech §2.1, mutable) fires exactly once per break. */
+  if (stepPoise(enemy)) {
+    dispatcher.runEffect('onStaggerStart', { entity: enemy, cause: 'poise', frames: STAGGER_FRAMES, mult: STAGGER_DAMAGE_MULT, cancelled: false });
+  }
   if (enemy.invulnFrames > 0) { enemy.invulnFrames -= 1; return; }
 
   const dist = Math.abs(player.x - enemy.x);

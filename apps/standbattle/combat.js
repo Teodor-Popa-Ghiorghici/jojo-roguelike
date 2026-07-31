@@ -14,9 +14,13 @@
 
 import { STANDS } from './data.js';
 import { createEnemyAI } from './ai.js';
-import { createPlayerFighter, createEnemyFighter } from './fighter.js';
+import { createPlayerFighter, createEnemyFighter, clampPersistence } from './fighter.js';
 import { initPoise } from './poise.js';
 import { createDispatcher } from './hooks.js';
+import { createStatPipeline } from './stats.js';
+import { createContentRegistry, loadContent } from './content_registry.js';
+import { installRunBuffs } from './effect_lib.js';
+import { stepStatuses } from './status.js';
 import { createJuice } from './juice.js';
 import { createFixedStepLoop } from './sim_loop.js';
 import { updatePlayer, performAction, ACTION_KEYS } from './combat_player.js';
@@ -28,7 +32,24 @@ const INPUT_BUFFER_FRAMES = 9; // 150ms -- matches tech §3.6's "9-frame buffer"
 export function createCombat(enemyDef, runBuffs, opts, rng) {
   opts = opts || {};
   const stand = STANDS.star_platinum;
-  const player = createPlayerFighter(stand, ARENA_MIN + 122, runBuffs);
+
+  /* Effect/query/content pipeline (tech §2.1/§2.2/§2.9, Phase 3) is built
+     BEFORE any fighter, because the run buffs' getMaxPersistence query
+     (deliverable 6) must already be registered when the player's max
+     Persistence is resolved a few lines down. contentRegistry is empty
+     today -- no Fragment/Relic content exists yet (Phase 4+) -- but
+     loadContent() still runs so the validator is exercised on every real
+     fight, not just in content_check.js's standalone regression test. */
+  const dispatcher = createDispatcher();
+  const stats = createStatPipeline();
+  installRunBuffs(dispatcher, runBuffs); // ports the 3 flat multiplier buffs off bespoke fighter.js fields
+  const contentRegistry = createContentRegistry();
+  loadContent(contentRegistry, dispatcher);
+
+  const player = createPlayerFighter(stand, ARENA_MIN + 122);
+  player.maxPersistence = dispatcher.runQuery('getMaxPersistence', player.maxPersistence, { entity: player });
+  clampPersistence(player);
+
   const enemy = createEnemyFighter(enemyDef, ARENA_MAX - 72, opts.hpMult, opts.speedMult, opts.tint);
   const isBoss = !!enemyDef.phases;
   const aiRng = rng.stream('ai');
@@ -37,7 +58,6 @@ export function createCombat(enemyDef, runBuffs, opts, rng) {
   enemy.brain = enemy.ai; // Brain component (tech §2.3): the AI profile/module list fighter.js reserved
   initPoise(enemy, enemyDef); // GDD §3.9 -- was an Infinity/Infinity stub until this phase
 
-  const dispatcher = createDispatcher();
   const juice = createJuice(opts.shakeEnabled);
   const keys = {};
   function push(msg) { combat.log.unshift(msg); combat.log.length = Math.min(4, combat.log.length); }
@@ -47,7 +67,7 @@ export function createCombat(enemyDef, runBuffs, opts, rng) {
      stay as named references into it so the render/pose/HUD/audio layers
      -- none of which this phase touches -- keep working unmodified. */
   const combat = {
-    player, enemy, entities: [player, enemy], juice, dispatcher, isBoss, keys, combatRng,
+    player, enemy, entities: [player, enemy], juice, dispatcher, stats, isBoss, keys, combatRng,
     outcome: 'fighting', banner: enemyDef.name || enemyDef.standName, bannerTimer: 84, // 1400ms
     log: [], pushLog: push, debug: false
   };
@@ -75,6 +95,7 @@ export function createCombat(enemyDef, runBuffs, opts, rng) {
     if (juice.update(FRAME_MS)) return; // hit-stop freezes the sim; see the Phase 1 report
     updatePlayer(combat);
     stepEnemyMovementAndAI(combat, enemyDef, aiRng);
+    combat.entities.forEach(stepStatuses); // GDD §3.10 / tech §2.6 -- statuses are data, the engine only ticks them
     if (player.hp <= 0 && combat.outcome === 'fighting') combat.outcome = 'lose';
   }
 
