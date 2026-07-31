@@ -6,6 +6,8 @@ import { createCombat } from './combat.js';
 import { drawCombat } from './render.js';
 import { drawMap, pickNode, drawEvent, pickChoice, drawRest, pickRestContinue } from './map.js';
 import { drawTitle, drawComplete } from './scenes.js';
+import { wireCombatAudio, sfxVictory, sfxDefeat, sfxActComplete } from './audio.js';
+import { musicStart, musicSetIntensity, musicStop } from './music.js';
 
 const W = 384, H = 216;
 const KEYMAP = {
@@ -92,6 +94,8 @@ export default {
       const combat = createCombat(enemyDef, state.runState.buffs, opts);
       combat.player.hp = state.runState.hp;
       combat.player.maxHp = state.runState.maxHp;
+      wireCombatAudio(combat);
+      musicSetIntensity(1);
       state.combat = combat;
       state.scene = 'combat';
     }
@@ -106,7 +110,8 @@ export default {
     function advanceNode() {
       state.runState.nodeIndex++;
       state.scene = state.runState.nodeIndex >= ACT1_MORIOH.nodes.length ? 'complete' : 'map';
-      if (state.scene === 'complete') ctx.save('cleared', true);
+      musicSetIntensity(0);
+      if (state.scene === 'complete') { ctx.save('cleared', true); sfxActComplete(); }
     }
 
     function applyEventChoice(idx) {
@@ -169,7 +174,19 @@ export default {
       const dt = Math.min(50, now - t0);
       t0 = now;
       tsec += dt / 1000;
-      if (state.scene === 'combat') { state.combat.update(dt); drawCombat(g, W, H, state.combat, tsec); }
+      if (state.scene === 'combat') {
+        const c = state.combat;
+        c.update(dt);
+        if (c.outcome === 'fighting') {
+          const tense = c.player.hp / c.player.maxHp < 0.3 || (c.isBoss && c.enemy.phaseIndex > 0);
+          musicSetIntensity(tense ? 2 : 1);
+        } else if (!c._announced) {
+          c._announced = true;
+          musicSetIntensity(0);
+          if (c.outcome === 'win') sfxVictory(); else sfxDefeat();
+        }
+        drawCombat(g, W, H, c, tsec);
+      }
       else if (state.scene === 'map') drawMap(g, W, H, ACT1_MORIOH.nodes, state.runState, tsec);
       else if (state.scene === 'event') drawEvent(g, W, H, state.currentEvent);
       else if (state.scene === 'rest') drawRest(g, W, H, state.runState);
@@ -180,8 +197,10 @@ export default {
         : 'CLICK TO CONTINUE';
     }
     raf = requestAnimationFrame(frame);
+    musicStart();
+    musicSetIntensity(0);
 
-    this._cleanup = () => { cancelAnimationFrame(raf); ro.disconnect(); };
+    this._cleanup = () => { cancelAnimationFrame(raf); ro.disconnect(); musicStop(); };
   },
 
   unmount() { if (this._cleanup) this._cleanup(); }

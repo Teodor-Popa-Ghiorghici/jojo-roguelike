@@ -21,8 +21,7 @@ export const STANDS = {
     source: 'Stardust Crusaders (Part 3)',
     stats: { power: 8, speed: 7, range: 2, persistence: 6, precision: 6, devPotential: 3 },
     moves: { light: 'sp_light', medium: 'sp_medium', heavy: 'sp_heavy', special: 'sp_barrage' },
-    standRush: 'sp_ora_rush',
-    colors: { body: PAL.magenta, trim: PAL.lmagenta, fist: PAL.white }
+    standRush: 'sp_ora_rush'
   }
 };
 
@@ -63,14 +62,12 @@ export const ENEMIES = {
   morioh_thug: {
     id: 'morioh_thug', name: 'MORIOH DELINQUENT', baseType: 'melee',
     hp: 40, power: 5, speedPx: 70, precision: 3,
-    attackPatterns: ['sweep', 'telegraphed_slam'],
-    colors: { body: PAL.blue, trim: PAL.lblue }
+    attackPatterns: ['sweep', 'telegraphed_slam']
   },
   angelo: {
     id: 'angelo', name: 'ANGELO', baseType: 'elite',
     hp: 78, power: 7, speedPx: 95, precision: 6,
-    attackPatterns: ['sweep', 'projectile', 'telegraphed_slam'],
-    colors: { body: PAL.green, trim: PAL.lgreen }
+    attackPatterns: ['sweep', 'projectile', 'telegraphed_slam']
   }
 };
 
@@ -86,7 +83,6 @@ export const BOSS_KILLER_QUEEN = {
   id: 'killer_queen', character: 'Yoshikage Kira', standName: 'Killer Queen',
   source: 'Diamond is Unbreakable (Part 4)',
   hp: 200, power: 9, speedPx: 80, precision: 8,
-  colors: { body: PAL.lmagenta, trim: PAL.magenta },
   phases: [
     { hpAbove: 0.5, attackPatterns: ['sweep', 'telegraphed_slam', 'projectile'] },
     { hpAbove: 0, attackPatterns: ['sweep', 'telegraphed_slam', 'projectile', 'sheer_heart_attack'] }

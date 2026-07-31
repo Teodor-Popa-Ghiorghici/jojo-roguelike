@@ -6,7 +6,9 @@
 
 export const HOOK_NAMES = [
   'onRunStart', 'onFloorStart', 'onHit', 'onKill',
-  'onDamageTaken', 'onNodeClear', 'onRunEnd'
+  'onDamageTaken', 'onNodeClear', 'onRunEnd',
+  'onDodgeSuccess', 'onParrySuccess', 'onMoveDenied',
+  'onTelegraphStart', 'onPhaseTransition'
 ];
 
 export function createDispatcher() {

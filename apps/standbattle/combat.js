@@ -14,10 +14,7 @@ import { createJuice } from './juice.js';
 const ARENA_MIN = 24, ARENA_MAX = 360;
 const DODGE_MS = 260, DODGE_IFRAME_MS = 200, PARRY_MS = 200;
 const PLAYER_SPEED = 95;
-
-function snd(freq, ms, vol) {
-  if (window.Snd && window.Snd.tone) window.Snd.tone(freq, ms, { vol: vol || 0.03 });
-}
+const DEATH_ANIM_MS = 900;
 
 export function createCombat(enemyDef, runBuffs, opts) {
   opts = opts || {};
@@ -36,10 +33,6 @@ export function createCombat(enemyDef, runBuffs, opts) {
     log: []
   };
 
-  dispatcher.on('onHit', p => { juice.triggerHitstop(p.hitstopMs); snd(p.freq || 260, 40, 0.035); });
-  dispatcher.on('onKill', () => snd(140, 260, 0.05));
-  dispatcher.on('onDamageTaken', () => snd(120, 90, 0.05));
-
   function push(msg) { combat.log.unshift(msg); combat.log.length = Math.min(4, combat.log.length); }
 
   combat.setKey = (code, down) => { keys[code] = down; };
@@ -57,7 +50,7 @@ export function createCombat(enemyDef, runBuffs, opts) {
     if (player.state !== 'idle') return;
     const id = kind === 'special' ? stand.moves.special : kind === 'rush' ? stand.standRush : stand.moves[kind];
     const move = MOVES[id];
-    if (move.persistenceCost && player.persistence < move.persistenceCost) { snd(90, 60, 0.03); return; }
+    if (move.persistenceCost && player.persistence < move.persistenceCost) { dispatcher.fire('onMoveDenied', {}); return; }
     startPlayerMove(move);
   }
 
@@ -89,11 +82,16 @@ export function createCombat(enemyDef, runBuffs, opts) {
         enemy.knockVx = (enemy.x >= player.x ? 1 : -1) * m.knockback;
         player.persistence += m.persistenceGain;
         clampPersistence(player);
+        player.comboCount++;
         juice.triggerHitstop(m.hitstopMs);
         juice.triggerShake(player.facing, 0, dead ? 6 : m.type === 'heavy' || m.type === 'rush' ? 4 : 2, 140);
         juice.spawnBurst(enemy.x, 100, '#FFFF55', dead ? 18 : 6, 90, player.facing, -0.4);
-        dispatcher.fire('onHit', { hitstopMs: m.hitstopMs, freq: 300 + player.hitsLanded * 30 });
-        if (dead) { dispatcher.fire('onKill', {}); combat.outcome = 'win'; }
+        dispatcher.fire('onHit', { moveType: m.type, combo: player.comboCount, finishing: dead });
+        if (dead) {
+          enemy.deathTimer = DEATH_ANIM_MS;
+          dispatcher.fire('onKill', { combo: player.comboCount });
+          combat.outcome = 'win';
+        }
       }
     }
   }
@@ -101,7 +99,12 @@ export function createCombat(enemyDef, runBuffs, opts) {
   function resolveIncomingHit(pattern, atX) {
     const dist = Math.abs(atX - player.x);
     if (dist > pattern.range) return;
-    if (player.invulnerable) { push('DODGED'); juice.spawnBurst(player.x, 100, '#55FFFF', 5, 60); return; }
+    if (player.invulnerable) {
+      push('DODGED');
+      juice.spawnBurst(player.x, 100, '#55FFFF', 5, 60);
+      dispatcher.fire('onDodgeSuccess', {});
+      return;
+    }
     if (player.parryWindow) {
       push('PARRIED!');
       player.parrySuccess = true;
@@ -110,21 +113,26 @@ export function createCombat(enemyDef, runBuffs, opts) {
       juice.triggerHitstop(120);
       juice.triggerShake(-player.facing, 0, 6, 160);
       juice.spawnBurst(player.x, 100, '#FFFFFF', 14, 110);
-      snd(880, 90, 0.05);
+      dispatcher.fire('onParrySuccess', {});
       const dmg = 12 * player.powerMult;
-      applyDamage(enemy, dmg);
+      const dead = applyDamage(enemy, dmg);
       enemy.knockVx = (enemy.x >= player.x ? 1 : -1) * 14;
-      if (enemy.hp <= 0) { dispatcher.fire('onKill', {}); combat.outcome = 'win'; }
+      if (dead) {
+        enemy.deathTimer = DEATH_ANIM_MS;
+        dispatcher.fire('onKill', { combo: player.comboCount });
+        combat.outcome = 'win';
+      }
       return;
     }
     const dmg = pattern.dmgMult * enemyDef.power * 2 * (opts.hpMult ? 1 : 1);
     const dead = applyDamage(player, dmg);
     player.knockVx = (player.x >= atX ? 1 : -1) * pattern.knockback;
+    player.comboCount = 0;
     juice.triggerHitstop(pattern.hitstopMs);
     juice.triggerShake(atX >= player.x ? -1 : 1, 0.3, pattern.dmgMult > 1.5 ? 7 : 4, 180);
     juice.spawnBurst(player.x, 100, '#FF5555', 10, 100);
-    dispatcher.fire('onDamageTaken', { dmg });
-    player.state = 'hitstun';
+    dispatcher.fire('onDamageTaken', { dmg, heavy: pattern.dmgMult > 1.5 });
+    player.state = dead ? 'dead' : 'hitstun';
     player.stateTimer = 260;
     player.invulnerable = false;
     player.parryWindow = false;
@@ -141,6 +149,7 @@ export function createCombat(enemyDef, runBuffs, opts) {
       let mv = 0;
       if (keys.left) mv -= 1;
       if (keys.right) mv += 1;
+      player.moving = mv !== 0;
       player.x = Math.max(ARENA_MIN, Math.min(ARENA_MAX, player.x + mv * PLAYER_SPEED * player.speedMult * dt / 1000));
       if (keys.light) tryAttack('light');
       else if (keys.medium) tryAttack('medium');
@@ -196,12 +205,16 @@ export function createCombat(enemyDef, runBuffs, opts) {
       combat.bannerTimer = 1800;
       juice.triggerHitstop(160);
       juice.triggerShake(0, -1, 8, 260);
-      snd(200, 300, 0.06);
+      dispatcher.fire('onPhaseTransition', {});
     }
   }
 
   function updateEnemy(dt) {
-    if (enemy.hp <= 0) return;
+    if (enemy.hp <= 0) {
+      if (enemy.deathTimer > 0) enemy.deathTimer = Math.max(0, enemy.deathTimer - dt);
+      if (enemy.hurtFlash > 0) enemy.hurtFlash = Math.max(0, enemy.hurtFlash - dt / 150);
+      return;
+    }
     if (enemy.hurtFlash > 0) enemy.hurtFlash = Math.max(0, enemy.hurtFlash - dt / 150);
     if (enemy.knockVx) { enemy.x += enemy.knockVx; enemy.knockVx *= 0.82; if (Math.abs(enemy.knockVx) < 0.3) enemy.knockVx = 0; }
     enemy.x = Math.max(ARENA_MIN, Math.min(ARENA_MAX, enemy.x));
@@ -209,11 +222,14 @@ export function createCombat(enemyDef, runBuffs, opts) {
     if (enemy.invulnUntil > 0) { enemy.invulnUntil -= dt; return; }
 
     const dist = Math.abs(player.x - enemy.x);
+    enemy.moving = false;
     if (enemy.ai.state === 'approach') {
       const dir = player.x > enemy.x ? 1 : -1;
-      if (dist > enemy.ai.approachRange) enemy.x += dir * enemy.speedPx * dt / 1000;
+      if (dist > enemy.ai.approachRange) { enemy.x += dir * enemy.speedPx * dt / 1000; enemy.moving = true; }
     }
+    const wasWindup = enemy.ai.state === 'windup';
     const ev = stepEnemyAI(enemy.ai, Math.abs(player.x - enemy.x), dt);
+    if (!wasWindup && enemy.ai.state === 'windup') dispatcher.fire('onTelegraphStart', { pattern: enemy.ai.pattern });
     if (ev && ev.type === 'spawnMelee') {
       resolveIncomingHit(ev.pattern, enemy.x);
     } else if (ev && ev.type === 'spawnProjectile') {
