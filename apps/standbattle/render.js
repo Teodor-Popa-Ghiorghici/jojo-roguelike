@@ -17,6 +17,7 @@ import { drawKillerQueen } from './sprite_boss.js';
 import { drawBackground, drawForeground } from './background.js';
 import { drawHUD, drawBanner } from './hud.js';
 import { createFx, wireFx } from './fx.js';
+import { sceneEvents, telegraph, projectiles, particles, groundDust } from './arena.js';
 import { text } from './font.js';
 import { FX, JOTARO, S, SH, BASE, LT, RIM } from './palette.js';
 
@@ -26,6 +27,15 @@ export const WORLD_W = 600;
 const ENEMY_ART = { morioh_thug: drawThug, angelo: drawAngelo };
 const SCENE_FOR = {
   n1: 'alley', n2: 'street', n3: 'street', n4: 'street', n5: 'park', n6: 'store'
+};
+
+/* each arena's key light, used for the rim on every sprite so characters
+   are lit by the scene they are standing in */
+const SCENE_LIGHT = {
+  alley: { color: '#FFD79B', alpha: 0.34 },
+  street: { color: '#FFC98A', alpha: 0.42 },
+  park: { color: '#9FC0FF', alpha: 0.34 },
+  store: { color: '#CFE0FF', alpha: 0.38 }
 };
 
 function camera(combat, W) {
@@ -66,6 +76,7 @@ function drawStand(g, player, pose, camX, tsec) {
     y: GROUND_Y - (rushing ? 22 : 10) + bob,
     ox: 150, oy: 214, flip: player.facing,
     outline: '#160A28', thickOutline: true,
+    rim: { color: '#D5A8FF', alpha: 0.5, dx: -1, dy: -2 },
     alpha: 0.55 + manifest * 0.45,
     tint: { color: '#B98BFF', alpha: 0.18 * (1 - manifest) }
   });
@@ -87,7 +98,7 @@ function drawBarrage(g, player, enemy, pose, camX) {
   });
 }
 
-function drawFighter(g, f, pose, camX, tsec, isPlayer, phaseIndex) {
+function drawFighter(g, f, pose, camX, tsec, isPlayer, phaseIndex, rim) {
   const paint = isPlayer
     ? bg => drawJotaro(bg, pose)
     : f.def.id === 'killer_queen'
@@ -109,79 +120,11 @@ function drawFighter(g, f, pose, camX, tsec, isPlayer, phaseIndex) {
     x: f.x - camX, y: GROUND_Y, flip: f.facing, rot: (pose.bodyRot || 0),
     sx: pose.squashX, sy: pose.squashY,
     shadow: shadowOpts(pose),
-    flash: { color: '#FFE2D2', alpha: Math.min(0.34, (pose.flash || 0) * 0.42) },
+    flash: { color: '#FFB8A8', alpha: Math.min(0.24, (pose.flash || 0) * 0.3) },
     tint: f.tint ? { color: f.tint, alpha: 0.28 } : null,
+    rim,
     ghosts
   });
-}
-
-/* ---- world extras ------------------------------------------------------ */
-
-function telegraph(g, enemy, camX, tsec) {
-  const ai = enemy.ai;
-  if (!ai || ai.state !== 'windup' || !ai.pattern) return;
-  const k = 1 - Math.max(0, ai.timer) / ai.pattern.windupMs;
-  const x = enemy.x - camX;
-  const r = ai.pattern.range;
-  const pulse = 0.35 + 0.45 * Math.abs(Math.sin(tsec * 16));
-  g.save();
-  g.globalAlpha = pulse * (0.35 + k * 0.5);
-  ellipse(g, x, GROUND_Y + 2, r * (0.4 + k * 0.6), r * 0.14 + 3, ai.pattern.telegraph);
-  g.globalAlpha = pulse;
-  ring(g, x, GROUND_Y + 2, r * (0.4 + k * 0.6), 2, ai.pattern.telegraph, 0.26);
-  g.restore();
-  /* an escalating warning chevron over the enemy's head */
-  const y = GROUND_Y - 130 - Math.sin(tsec * 12) * 2;
-  g.save();
-  g.globalAlpha = 0.55 + 0.45 * Math.sin(tsec * 14);
-  poly(g, [[x - 7, y], [x + 7, y], [x, y + 9]], ai.pattern.telegraph);
-  poly(g, [[x - 4, y + 1], [x + 4, y + 1], [x, y + 6]], '#FFFFFF');
-  g.restore();
-  if (k > 0.55) {
-    text(g, ai.pattern.label, x, y - 12, {
-      scale: 1, align: 'center', color: ai.pattern.telegraph, outline: '#1A0A0A'
-    });
-  }
-}
-
-function projectiles(g, enemy, camX, tsec) {
-  enemy.projectiles.forEach(pr => {
-    const x = pr.x - camX, y = GROUND_Y - 60;
-    const c = pr.pattern.telegraph;
-    g.save();
-    g.globalAlpha = 0.85 + 0.15 * Math.sin(tsec * 30 + pr.x);
-    for (let i = 1; i <= 4; i++) {
-      g.globalAlpha = 0.5 / i;
-      disc(g, x - pr.dir * i * 7, y + Math.sin(tsec * 20 + i) * 2, 5 - i * 0.8, c);
-    }
-    g.globalAlpha = 1;
-    disc(g, x, y, 7, c);
-    disc(g, x, y, 4, '#FFFFFF');
-    for (let i = 0; i < 4; i++) {
-      const a = tsec * 9 + i * Math.PI / 2;
-      line(g, x + Math.cos(a) * 6, y + Math.sin(a) * 6, x + Math.cos(a) * 12, y + Math.sin(a) * 12, 1, c);
-    }
-    g.restore();
-  });
-}
-
-function particles(g, juice, camX) {
-  juice.particles.forEach(p => {
-    const a = Math.max(0, 1 - p.life / p.maxLife);
-    g.save();
-    g.globalAlpha = a;
-    px(g, p.x - camX, p.y, p.size, p.size, p.color);
-    g.restore();
-  });
-}
-
-function groundDust(g, pose, x, tsec, seedOffset) {
-  if (!pose.dust) return;
-  for (let i = 0; i < 4; i++) {
-    const a = (i / 4) * Math.PI + seedOffset;
-    ellipse(g, x + Math.cos(a) * (8 + i * 5), GROUND_Y - 2 - Math.abs(Math.sin(a)) * 4,
-      5 + i * 2, 2.5 + i, FX.dust[2 + (i % 3)]);
-  }
 }
 
 /* ---- entry point ------------------------------------------------------- */
@@ -201,9 +144,13 @@ export function drawCombat(g, W, H, combat, tsec, dtMs, nodeId) {
   const ppose = playerPose(player, tsec, dt, combat.outcome);
   const epose = (enemy.hp > 0 || (enemy.deathTimer || 0) > 0) ? enemyPose(enemy, tsec, dt) : null;
 
+  const scene = SCENE_FOR[nodeId] || 'street';
+  const rim = SCENE_LIGHT[scene];
+  if (!frozen) sceneEvents(combat, fx, ppose, epose, camX, tsec);
+
   g.save();
   g.translate(juice.shakeX, juice.shakeY);
-  drawBackground(g, W, H, SCENE_FOR[nodeId] || 'street', camX, tsec, GROUND_Y);
+  drawBackground(g, W, H, scene, camX, tsec, GROUND_Y);
 
   if (enemy.hp > 0) telegraph(g, enemy, camX, tsec);
   groundDust(g, ppose, player.x - camX, tsec, 0);
@@ -211,15 +158,15 @@ export function drawCombat(g, W, H, combat, tsec, dtMs, nodeId) {
 
   drawStand(g, player, ppose, camX, tsec);
   const playerFirst = enemy.x < player.x;
-  const drawP = () => drawFighter(g, player, ppose, camX, tsec, true);
-  const drawE = () => epose && drawFighter(g, enemy, epose, camX, tsec, false, enemy.phaseIndex);
+  const drawP = () => drawFighter(g, player, ppose, camX, tsec, true, 0, rim);
+  const drawE = () => epose && drawFighter(g, enemy, epose, camX, tsec, false, enemy.phaseIndex, rim);
   if (playerFirst) { drawP(); drawE(); } else { drawE(); drawP(); }
   drawBarrage(g, player, enemy, ppose, camX);
 
   projectiles(g, enemy, camX, tsec);
   particles(g, juice, camX);
   fx.draw(g, W, H);
-  drawForeground(g, W, H, SCENE_FOR[nodeId] || 'street', camX, tsec, GROUND_Y);
+  drawForeground(g, W, H, scene, camX, tsec, GROUND_Y);
   g.restore();
 
   drawHUD(g, W, H, combat, tsec);

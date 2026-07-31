@@ -172,7 +172,7 @@ function drawHead(g, sk, pose) {
 
 function drawArm(g, j, pose, front) {
   const ramp = J.coat;
-  drawLimb(g, j, front ? 14 : 12.5, front ? 11 : 10, 8.6, ramp);
+  drawLimb(g, j, front ? 14 : 12.5, front ? 11 : 10, 8.6, ramp, null, front ? '#04050B' : null);
   /* cuff */
   const dx = j.wrist.x - j.elbow.x, dy = j.wrist.y - j.elbow.y;
   const len = Math.hypot(dx, dy) || 1;
@@ -187,8 +187,8 @@ function drawArm(g, j, pose, front) {
     front ? pose.handFront : pose.handRear);
 }
 
-function drawLeg(g, j, pose) {
-  drawLimb(g, j, 16, 12, 9.5, J.pants);
+function drawLeg(g, j, pose, front) {
+  drawLimb(g, j, 16, 12, 9.5, J.pants, null, front ? '#04050B' : null);
   boot(g, j.ankle.x, j.ankle.y, j.shinAng, SPEC, J.boot, J.boot);
 }
 
@@ -201,7 +201,7 @@ export function drawJotaro(g, pose) {
   coatFront(g, sk, pose, -1);
   drawArm(g, sk.armRear, pose, false);
   torso(g, sk, pose);
-  drawLeg(g, sk.legFront, pose);
+  drawLeg(g, sk.legFront, pose, true);
   coatFront(g, sk, pose, 1);
   collar(g, sk, pose);
   drawHead(g, sk, pose);

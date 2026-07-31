@@ -163,6 +163,25 @@ export function enemyPose(enemy, tsec, dtMs) {
     flinch(pose, hurt, s.hitSeed);
     pose.action = pose.action + '-hit';
   }
+  /* Stagger scales with how hard the hit actually shoved them, so a jab
+     is a twitch and a heavy is a stumble -- the same information the
+     knockback carries, made visible on the body. */
+  const kb = Math.min(1, Math.abs(enemy.knockVx || 0) / 16);
+  if (kb > 0.2) {
+    pose.chestRot -= 0.34 * kb;
+    pose.headRot -= 0.42 * kb;
+    pose.hipY += 1.1 * kb;
+    pose.legRear.hip -= 0.5 * kb;
+    pose.legRear.knee -= 0.3 * kb;
+    pose.legFront.hip += 0.22 * kb;
+    pose.armFront.sh -= 0.75 * kb; pose.armFront.el += 0.5 * kb;
+    pose.armRear.sh += 0.85 * kb; pose.armRear.el += 0.4 * kb;
+    pose.handFront = 'open'; pose.handRear = 'open';
+    pose.coatFlow -= 0.8 * kb;
+    pose.hairFlow -= 0.7 * kb;
+    pose.squashX += 0.05 * kb;
+    pose.dust = kb > 0.55 ? 1 : 0;
+  }
   s.lastHurt = hurt;
   pose.flash = hurt;
   if (enemy.knockVx) pose.chestRot -= Math.max(-0.3, Math.min(0.3, enemy.knockVx * 0.02 * (enemy.facing || 1)));

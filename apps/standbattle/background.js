@@ -133,11 +133,11 @@ export function drawForeground(g, W, H, sceneId, camX, tsec, groundY) {
   const p = camX * 1.35;
   const dark = '#070810';
   if (cfg.kind === 'alley') {
-    const lx = -40 - p * 0.1, rx = W + 40 - p * 0.1;
-    poly(g, [[lx, 0], [lx + 62, 0], [lx + 30, H], [lx - 20, H]], dark);
-    poly(g, [[lx + 52, 0], [lx + 62, 0], [lx + 30, H], [lx + 22, H]], '#151726');
-    poly(g, [[rx, 0], [rx - 66, 0], [rx - 34, H], [rx + 20, H]], dark);
-    poly(g, [[rx - 56, 0], [rx - 66, 0], [rx - 34, H], [rx - 26, H]], '#151726');
+    const lx = -30 - p * 0.1, rx = W + 30 - p * 0.1;
+    poly(g, [[lx, 0], [lx + 40, 0], [lx + 20, H], [lx - 14, H]], dark);
+    poly(g, [[lx + 33, 0], [lx + 40, 0], [lx + 20, H], [lx + 15, H]], '#151726');
+    poly(g, [[rx, 0], [rx - 42, 0], [rx - 22, H], [rx + 14, H]], dark);
+    poly(g, [[rx - 35, 0], [rx - 42, 0], [rx - 22, H], [rx - 17, H]], '#151726');
     for (let x = 0; x < W; x += 3) {
       px(g, x, 10 + Math.sin((x + p) / W * Math.PI * 2) * 9, 3, 2, dark);
     }
@@ -156,11 +156,11 @@ export function drawForeground(g, W, H, sceneId, camX, tsec, groundY) {
       }
     }
   } else if (cfg.kind === 'store') {
-    const cx = ((-p * 0.5) % 240 + 240) % 240 - 60;
-    for (const x of [cx, cx + 240]) {
-      px(g, x, 0, 26, H, dark);
-      px(g, x, 0, 6, H, '#151726');
-      px(g, x + 22, 0, 4, H, '#0B0C14');
+    const cx = ((-p * 0.5) % 300 + 300) % 300 - 80;
+    for (const x of [cx, cx + 300]) {
+      px(g, x, 0, 18, H, dark);
+      px(g, x, 0, 5, H, '#151726');
+      px(g, x + 15, 0, 3, H, '#0B0C14');
     }
   } else {
     poly(g, [[-10, H], [-10, H - 60], [10, H - 62], [26, H]], dark);
@@ -168,6 +168,8 @@ export function drawForeground(g, W, H, sceneId, camX, tsec, groundY) {
     px(g, W - 26, H - 92, 5, 30, dark);
     poly(g, [[W - 36, H - 96], [W - 8, H - 96], [W - 12, H - 88], [W - 32, H - 88]], dark);
   }
+  ambient(g, W, H, cfg, camX, tsec, groundY);
+
   g.save();
   g.globalAlpha = 0.22;
   for (let i = 0; i < 16; i++) {
@@ -175,6 +177,58 @@ export function drawForeground(g, W, H, sceneId, camX, tsec, groundY) {
     px(g, 0, H - 1 - i, W, 1, '#000000');
     px(g, i, 0, 1, H, '#000000');
     px(g, W - 1 - i, 0, 1, H, '#000000');
+  }
+  g.restore();
+}
+
+/* Per-scene weather and lamp light, drawn over the fighters: leaves
+   turning as they fall in the park, steam and litter in the alley, dust
+   in the store's spotlights. Light pools in particular matter -- when the
+   characters walk through them they stop looking pasted on. */
+function ambient(g, W, H, cfg, camX, tsec, groundY) {
+  const p = camX * 0.62;
+  g.save();
+  if (cfg.kind === 'alley' || cfg.kind === 'street') {
+    g.globalAlpha = 0.10;
+    for (let i = 0; i < 3; i++) {
+      const x = (cfg.kind === 'alley' ? 200 + i * 220 : 150 + i * 240) - p;
+      const top = groundY - (cfg.kind === 'alley' ? 58 : 76);
+      poly(g, [[x - 5, top + 6], [x + 8, top + 6], [x + 26, groundY + 4], [x - 24, groundY + 4]], '#FFE9A8');
+    }
+    g.globalAlpha = 0.34;
+    for (let i = 0; i < 10; i++) {
+      const t = tsec * 0.5 + i * 3;
+      const x = ((i * 149 + t * 14) % (W + 40)) - 20;
+      const y = groundY - 20 - ((t * 9 + i * 37) % 90);
+      ellipse(g, x, y, 5 + (i % 3) * 3, 3, '#5A5468');
+    }
+  } else if (cfg.kind === 'park') {
+    g.globalAlpha = 0.85;
+    for (let i = 0; i < 14; i++) {
+      const t = tsec * 0.35 + i * 1.7;
+      const fall = (t * 26 + i * 53) % (groundY + 40);
+      const x = ((i * 97 + Math.sin(t) * 26 + tsec * 6) % (W + 30)) - 15;
+      const y = fall - 10;
+      const spin = Math.sin(t * 3 + i);
+      poly(g, [[x, y], [x + 3 * spin, y - 2], [x + 4 * spin, y + 1], [x + 1, y + 3]],
+        i % 3 ? '#8E5A22' : '#B8823A');
+    }
+    g.globalAlpha = 0.10;
+    for (let i = 0; i < 4; i++) {
+      const x = 120 + i * 180 - p;
+      poly(g, [[x - 4, groundY - 60], [x + 7, groundY - 60], [x + 22, groundY + 4], [x - 20, groundY + 4]], '#CFE0FF');
+    }
+  } else {
+    g.globalAlpha = 0.09;
+    for (let i = 0; i < 5; i++) {
+      const x = 60 + i * 110 - p * 0.5;
+      poly(g, [[x - 8, 30], [x + 8, 30], [x + 30, groundY + 10], [x - 30, groundY + 10]], '#CFE0FF');
+    }
+    g.globalAlpha = 0.5;
+    for (let i = 0; i < 16; i++) {
+      const t = tsec * 0.12 + i;
+      px(g, ((i * 113 + Math.sin(t) * 18) % W + W) % W, ((i * 61 + t * 5) % groundY), 1, 1, '#DCE8FF');
+    }
   }
   g.restore();
 }

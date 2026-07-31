@@ -8,6 +8,20 @@ import { ROWS, GLYPH_W, GLYPH_H } from './font_data.js';
 
 const SPACING = 1;
 
+/* typographic characters the 5x7 table doesn't carry, folded onto the
+   nearest glyph so prose never renders as a row of '?' */
+const FOLD = {
+  '\u2014': '-', '\u2013': '-', '\u2018': "'", '\u2019': "'",
+  '\u201C': '"', '\u201D': '"', '\u2026': '...', '\u00A0': ' ',
+  '\u00E9': 'E', '\u00E8': 'E', '\u00FC': 'U', '\u00F6': 'O'
+};
+
+function fold(str) {
+  let out = '';
+  for (const ch of String(str)) out += FOLD[ch] !== undefined ? FOLD[ch] : ch;
+  return out;
+}
+
 export function textWidth(str, scale, spacing) {
   const sc = scale || 1;
   const sp = spacing == null ? SPACING : spacing;
@@ -36,7 +50,7 @@ export function text(g, str, x, y, opts) {
   const o = opts || {};
   const sc = Math.max(1, Math.round(o.scale || 1));
   const sp = o.spacing == null ? SPACING : o.spacing;
-  const s = String(str).toUpperCase();
+  const s = fold(str).toUpperCase();
   const w = textWidth(s, sc, sp);
   let cx = Math.round(o.align === 'center' ? x - w / 2 : o.align === 'right' ? x - w : x);
   const cy = Math.round(y);
@@ -69,7 +83,7 @@ export function paragraph(g, str, x, y, maxW, opts) {
   const o = opts || {};
   const sc = Math.max(1, Math.round(o.scale || 1));
   const lineH = (GLYPH_H + 3) * sc;
-  const words = String(str).split(' ');
+  const words = fold(str).split(' ');
   let line = '', yy = y;
   for (const wd of words) {
     const test = line ? line + ' ' + wd : wd;

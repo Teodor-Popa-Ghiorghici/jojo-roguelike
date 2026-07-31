@@ -62,7 +62,7 @@ export function basePose() {
     breath: 0, blink: 0, eyes: 'normal', brow: 'normal', mouth: 'closed', pupil: 0,
     flash: 0, ghosts: null, smear: 0, smearDir: 1,
     aura: 0, standOut: 0, standPunch: 0, standRot: 0, glow: 0, telegraph: 0,
-    dust: 0, airborne: 0
+    dust: 0, airborne: 0, gaitPhase: -1, bodyRot: 0
   };
 }
 
@@ -97,33 +97,40 @@ function tick(f, s, dtMs, pose, energy) {
 
 /* --- shared action builders ------------------------------------------- */
 
+/* A fighting stance, not a standing pose: weight settled between bent
+   knees, rear fist cocked at the ribs, lead hand up. A character who
+   idles with their arms hanging straight down reads as waiting for the
+   fight to start rather than being in one. */
 export function applyIdle(pose, s, energy) {
   const b = pose.breath;
   const sway = Math.sin(s.t * 0.62);
+  const bounce = Math.sin(s.t * 1.9) * (0.4 + energy * 0.6);
+  pose.hipY = 2.4 + b * 0.5 + bounce * 0.5;
   pose.chestY = -b * 0.9;
-  pose.chestRot = b * 0.035 + sway * 0.03;
+  pose.chestRot = -0.07 + b * 0.04 + sway * 0.03;
   pose.headY = -b * 0.5;
-  pose.headRot = -b * 0.03 + Math.sin(s.t * 0.43) * 0.05;
+  pose.headRot = 0.06 - b * 0.03 + Math.sin(s.t * 0.43) * 0.05;
   pose.hipX = sway * 0.7;
   pose.hipRot = sway * 0.04;
-  pose.armRear.sh = 0.12 + b * 0.07 + sway * 0.05;
-  pose.armFront.sh = -0.10 - b * 0.05 - sway * 0.05;
-  pose.armRear.el = 0.30 + b * 0.05;
-  pose.armFront.el = 0.34 + b * 0.06;
-  pose.legRear.hip = -0.16 + sway * 0.02;
-  pose.legFront.hip = 0.17 - sway * 0.02;
+  pose.armRear = { sh: 0.42 + b * 0.06 + sway * 0.04, el: 1.62 + b * 0.07 };
+  pose.armFront = { sh: -0.46 - b * 0.05 - sway * 0.05, el: 1.30 + b * 0.08 };
+  pose.legRear = { hip: -0.30 + sway * 0.02, knee: -0.34 - b * 0.03 - bounce * 0.02 };
+  pose.legFront = { hip: 0.32 - sway * 0.02, knee: -0.40 + b * 0.03 + bounce * 0.02 };
   pose.hairFlow = Math.sin(s.t * 1.1) * 0.06 + b * 0.03;
   pose.coatFlow = Math.sin(s.t * 0.9 + 1) * 0.09;
   pose.pupil = Math.sin(s.t * 0.35) * 0.6;
-  if (energy > 0.5) {
-    pose.legRear.knee = -0.22 - b * 0.05;
-    pose.legFront.knee = -0.26 + b * 0.05;
+  if (energy > 0.6) {
+    /* winded: deeper crouch, heavier breathing, head drops on the exhale */
+    pose.hipY += 1.4;
+    pose.chestRot -= 0.06;
+    pose.headY += Math.max(0, -b) * 0.8;
   }
 }
 
 /* A real gait: contact -> weight transfer -> passing -> lift, with the
    pelvis dropping on the loaded leg and the shoulders counter-rotating. */
 export function applyWalk(pose, s, phase, speed) {
+  pose.gaitPhase = phase;
   const p = phase * Math.PI * 2;
   const sn = Math.sin(p), cs = Math.cos(p);
   pose.legFront.hip = 0.52 * sn;
@@ -152,10 +159,12 @@ export function applyStrike(pose, phase, t, heavy, reach) {
     const k = ease.outCubic(t);
     pose.chestRot = -0.34 * k * heavy;
     pose.hipRot = -0.16 * k;
-    pose.armFront.sh = -0.10 - 0.85 * k * heavy;
-    pose.armFront.el = 0.34 + 1.5 * k;
-    pose.armRear.sh = 0.12 + 0.5 * k;
-    pose.armRear.el = 0.3 + 0.9 * k;
+    /* the cocked fist is pulled back AND up so it clears the shoulder --
+       an anticipation the player can actually see in silhouette */
+    pose.armFront.sh = -0.46 - 0.95 * k * heavy;
+    pose.armFront.el = 1.30 + 0.75 * k;
+    pose.armRear.sh = 0.42 + 0.45 * k;
+    pose.armRear.el = 1.62 - 0.35 * k;
     pose.hipY = 1.4 * k * heavy;
     pose.legFront.knee = -0.16 - 0.45 * k;
     pose.legRear.knee = -0.12 - 0.30 * k;
@@ -170,7 +179,7 @@ export function applyStrike(pose, phase, t, heavy, reach) {
     const k = ease.outQuint(Math.min(1, t * 2.6));
     pose.chestRot = -0.34 * heavy + k * (0.34 * heavy + 0.42);
     pose.hipRot = 0.20 * k;
-    pose.armFront.sh = -0.95 * heavy + k * (0.95 * heavy + 1.62 * reach);
+    pose.armFront.sh = -0.95 * heavy + k * (0.95 * heavy + 1.46 * reach);
     pose.armFront.el = Math.max(0.02, 1.84 - k * 1.8);
     pose.armRear.sh = 0.62 - k * 0.9;
     pose.armRear.el = 1.2 - k * 0.5;
@@ -246,16 +255,19 @@ export function applyDeath(pose, t) {
     pose.armFront.sh = -1.3 + 1.5 * k; pose.armRear.sh = 1.2 - 0.6 * k;
     pose.hipX = -2 - 1 * k;
   } else {
-    const k = ease.outCubic(Math.min(1, (t - 0.55) / 0.45));
-    pose.chestRot = 0.4 + 0.7 * k;
-    pose.headRot = 0.3 + 0.5 * k;
-    pose.hipY = 5 + 9 * k;
-    pose.hipX = -3 - 5 * k;
-    pose.legFront.hip = 0.5 + 0.5 * k; pose.legFront.knee = -1.5 + 0.9 * k;
-    pose.legRear.hip = -0.36 - 0.4 * k; pose.legRear.knee = -1.3 + 0.7 * k;
-    pose.armFront.sh = 0.2 + 1.1 * k; pose.armRear.sh = 0.6 + 0.9 * k;
-    pose.squashY = 1 - 0.12 * k; pose.squashX = 1 + 0.14 * k;
-    pose.dust = k < 0.3 ? 1 : 0;
+    /* the fall itself: the whole body pivots over the heels and lands
+       flat, rather than folding into a crouch that never topples */
+    const k = ease.inQuad(Math.min(1, (t - 0.55) / 0.45));
+    pose.bodyRot = -1.42 * k;
+    pose.chestRot = 0.4 - 0.5 * k;
+    pose.headRot = 0.3 - 0.6 * k;
+    pose.hipY = 5 - 3 * k;
+    pose.hipX = -3 + 6 * k;
+    pose.legFront.hip = 0.5 - 0.7 * k; pose.legFront.knee = -1.5 + 1.1 * k;
+    pose.legRear.hip = -0.36 + 0.2 * k; pose.legRear.knee = -1.3 + 1.0 * k;
+    pose.armFront.sh = 0.2 + 1.5 * k; pose.armRear.sh = 0.6 + 1.2 * k;
+    pose.squashY = 1 - 0.06 * k; pose.squashX = 1 + 0.06 * k;
+    pose.dust = k > 0.7 ? 1 : 0;
   }
   pose.eyes = 'x'; pose.mouth = 'open'; pose.brow = 'pain';
   pose.handFront = 'open'; pose.handRear = 'open';

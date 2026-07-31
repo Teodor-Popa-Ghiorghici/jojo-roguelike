@@ -52,12 +52,21 @@ export function skeleton(spec, pose) {
   };
 }
 
-/* two-segment limb with a rounded joint, drawn back-to-front */
-export function drawLimb(g, j, w0, w1, w2, ramp, jointRamp) {
-  limbShape(g, j.sh ? j.sh.x : j.hip.x, j.sh ? j.sh.y : j.hip.y,
-    j.elbow ? j.elbow.x : j.knee.x, j.elbow ? j.elbow.y : j.knee.y, w0, w1, ramp);
+/* Two-segment limb with a rounded joint, drawn back-to-front.
+
+   `occlude` paints a slightly fatter copy underneath in a dark colour
+   first. On a limb that crosses the character's own torso that halo
+   becomes a contact shadow, which is the difference between an arm that
+   sits IN FRONT of the chest and one that looks welded to it. */
+export function drawLimb(g, j, w0, w1, w2, ramp, jointRamp, occlude) {
+  const a = j.sh || j.hip;
   const mid = j.elbow || j.knee;
   const end = j.wrist || j.ankle;
+  if (occlude) {
+    limbShape(g, a.x, a.y, mid.x, mid.y, w0 + 3, w1 + 3, ramp, { flat: occlude });
+    limbShape(g, mid.x, mid.y, end.x, end.y, w1 + 3, w2 + 3, ramp, { flat: occlude });
+  }
+  limbShape(g, a.x, a.y, mid.x, mid.y, w0, w1, ramp);
   limbShape(g, mid.x, mid.y, end.x, end.y, w1, w2, ramp);
   if (jointRamp) disc(g, mid.x, mid.y, w1 * 0.5, jointRamp[SH]);
 }

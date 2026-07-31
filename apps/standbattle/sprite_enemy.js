@@ -46,7 +46,7 @@ function paint(g, pose, b) {
   if (b.coatTail) b.coatTail(g, sk, pose);
   jacket(g, sk, spec, b);
 
-  drawLimb(g, sk.legFront, 13.5, 10.5, 8, b.pants);
+  drawLimb(g, sk.legFront, 13.5, 10.5, 8, b.pants, null, '#05060A');
   boot(g, sk.legFront.ankle.x, sk.legFront.ankle.y, sk.legFront.shinAng, spec, b.shoe, b.shoe);
 
   /* head */
@@ -61,7 +61,7 @@ function paint(g, pose, b) {
   if (pose.action === 'hurt' || pose.flash > 0.3) sweat(g, cx, cy, ang, spec.headScale, (pose.t || 0) * 3);
 
   /* front arm last, over everything */
-  drawLimb(g, sk.armFront, 12, 9.6, 7.8, b.cloth);
+  drawLimb(g, sk.armFront, 12, 9.6, 7.8, b.cloth, null, '#05060A');
   hand(g, sk.armFront.wrist.x, sk.armFront.wrist.y, sk.armFront.foreAng, 10.5, b.skin, pose.handFront);
   return sk;
 }

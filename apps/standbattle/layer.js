@@ -120,6 +120,17 @@ export function stamp(g, buf, opts) {
     for (const [dx, dy] of offs) place(ink.cv, dx, dy, o.alpha);
   }
 
+  /* Scene rim light: the silhouette nudged toward the key light and drawn
+     in the scene's own light colour, so the sprite is left with a lit
+     edge along its top and light side. This is what stops a character
+     from looking like a sticker pasted onto the background -- the
+     backdrop's light now visibly falls on them. */
+  if (o.rim) {
+    const r = silhouette(buf, o.rim.color, '_sil_rim');
+    place(r.cv, o.rim.dx == null ? -1 : o.rim.dx, o.rim.dy == null ? -2 : o.rim.dy,
+      (o.rim.alpha == null ? 0.5 : o.rim.alpha) * (o.alpha == null ? 1 : o.alpha));
+  }
+
   place(buf.cv, 0, 0, o.alpha);
 
   if (o.tint && o.tint.alpha > 0.01) {

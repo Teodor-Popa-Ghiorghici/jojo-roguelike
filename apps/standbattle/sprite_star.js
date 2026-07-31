@@ -89,7 +89,7 @@ function standHead(g, sk, pose) {
 
 function standArm(g, j, pose, front, alpha) {
   if (alpha != null) g.globalAlpha = alpha;
-  drawLimb(g, j, front ? 17 : 15, front ? 13 : 11.5, 10, SP.body);
+  drawLimb(g, j, front ? 17 : 15, front ? 13 : 11.5, 10, SP.body, null, front ? '#0A0616' : null);
   /* forearm guard */
   const dx = j.wrist.x - j.elbow.x, dy = j.wrist.y - j.elbow.y;
   const len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
@@ -105,8 +105,8 @@ function standArm(g, j, pose, front, alpha) {
   if (alpha != null) g.globalAlpha = 1;
 }
 
-function standLeg(g, j) {
-  drawLimb(g, j, 19, 14, 11, SP.body);
+function standLeg(g, j, front) {
+  drawLimb(g, j, 19, 14, 11, SP.body, null, front ? '#0A0616' : null);
   limbShape(g, j.knee.x, j.knee.y, j.ankle.x, j.ankle.y, 15, 12, SP.teal);
   const a = Math.max(-0.4, Math.min(0.4, j.shinAng * 0.3));
   poly(g, place([[-5, -7], [10, -8], [13, -2], [13, 1], [-6, 1]], j.ankle.x, j.ankle.y, a), SP.body[BASE]);
@@ -160,7 +160,7 @@ export function drawStar(g, pose, manifest) {
   poly(g, torsoPoly(sk, SPEC, 0), SP.body[BASE]);
   poly(g, bodyPoly(sk, [[-19, 1.0], [-6, 1.0], [-5, 0.0], [-13, 0.0]]), SP.body[SH]);
   armour(g, sk, pose);
-  standLeg(g, sk.legFront);
+  standLeg(g, sk.legFront, true);
   standHead(g, sk, pose);
   if (!(pose.standPunch > 1)) standArm(g, sk.armFront, pose, true);
   /* Materialisation: the Stand forms from the head down, with a dithered

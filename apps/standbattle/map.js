@@ -113,15 +113,26 @@ export function drawMap(g, W, H, nodes, runState, tsec) {
     /* labels alternate above/below and are clamped inside the frame, with
        a plate behind them so they stay readable over a lit skyline */
     const above = p.index % 2 === 1;
-    const tw = textWidth(p.node.label, 1);
-    const lx = Math.max(tw / 2 + 4, Math.min(W - tw / 2 - 4, p.x));
-    const ly = above ? p.y - 27 : p.y + 19;
-    px(g, lx - tw / 2 - 3, ly - 2, tw + 6, 11, '#080910');
-    px(g, lx - tw / 2 - 3, ly - 2, tw + 6, 1, '#2A3050');
-    text(g, p.node.label, lx, ly, {
+    /* long names wrap onto a second line rather than running into the
+       neighbouring node -- six nodes across 480px leaves ~74px each */
+    const words = p.node.label.split(' ');
+    const lines = [];
+    let cur = '';
+    for (const w of words) {
+      const test = cur ? cur + ' ' + w : w;
+      if (textWidth(test, 1) > 74 && cur) { lines.push(cur); cur = w; } else cur = test;
+    }
+    if (cur) lines.push(cur);
+    const bw = Math.max(...lines.map(l => textWidth(l, 1)));
+    const bh = lines.length * 9 + 2;
+    const lx = Math.max(bw / 2 + 4, Math.min(W - bw / 2 - 4, p.x));
+    const ly = above ? p.y - 20 - bh : p.y + 18;
+    px(g, lx - bw / 2 - 3, ly - 2, bw + 6, bh, '#080910');
+    px(g, lx - bw / 2 - 3, ly - 2, bw + 6, 1, '#2A3050');
+    lines.forEach((l, li) => text(g, l, lx, ly + li * 9, {
       scale: 1, align: 'center',
       color: state === 'now' ? '#FFE86A' : state === 'done' ? '#6A7080' : '#A8B0C8'
-    });
+    }));
   });
 
   px(g, 0, 0, W, 26, '#0A0B14');
@@ -130,7 +141,12 @@ export function drawMap(g, W, H, nodes, runState, tsec) {
   text(g, 'DIAMOND IS UNBREAKABLE', 8, 18, { scale: 1, color: '#B08AC8' });
   text(g, 'HP ' + Math.round(runState.hp) + '/' + runState.maxHp, W - 8, 6, { scale: 2, align: 'right', color: '#5FD672', outline: '#0E4A22' });
   if (runState.buffs.length) {
-    text(g, runState.buffs.map(b => b.label).join('  '), W - 8, 20, { scale: 1, align: 'right', color: '#FFD24A' });
+    runState.buffs.forEach((b, i) => {
+      const tw = textWidth(b.label, 1);
+      px(g, 6, H - 30 - i * 12, tw + 8, 11, '#080910');
+      px(g, 6, H - 30 - i * 12, 2, 11, '#FFD24A');
+      text(g, b.label, 11, H - 28 - i * 12, { scale: 1, color: '#FFD24A' });
+    });
   }
   text(g, 'CLICK THE GLOWING NODE', W / 2, H - 12, {
     scale: 1, align: 'center', color: '#C8D0F0', shadow: '#05060C',

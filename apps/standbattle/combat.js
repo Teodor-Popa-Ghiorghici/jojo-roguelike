@@ -11,7 +11,7 @@ import { createPlayerFighter, createEnemyFighter, applyDamage, clampPersistence 
 import { createDispatcher } from './hooks.js';
 import { createJuice } from './juice.js';
 
-const ARENA_MIN = 40, ARENA_MAX = 560;
+const ARENA_MIN = 58, ARENA_MAX = 542;
 const DODGE_MS = 260, DODGE_IFRAME_MS = 200, PARRY_MS = 200;
 const PLAYER_SPEED = 172;
 const DEATH_ANIM_MS = 900;

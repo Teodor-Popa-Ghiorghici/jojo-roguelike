@@ -57,6 +57,37 @@ export function buildNear(g, W, H, cfg, groundY) {
         px(g, x, y0 + Math.sin((x / W) * Math.PI * 3 + i) * 5 + 4, 2, 1, '#0B0C12');
       }
     }
+    /* posters and a tag, so the brick isn't a repeating texture wall */
+    for (let i = 0; i < 5; i++) {
+      const x = 66 + i * 152, y = groundY - 74 - (i % 3) * 16;
+      const w = 24 + (i % 2) * 8, h = 32;
+      px(g, x, y, w, h, i % 2 ? '#8A8478' : '#7C7264');
+      px(g, x, y, w, 2, '#A39C8C');
+      px(g, x + 2, y + 4, w - 4, 3, i % 2 ? '#7A2450' : '#243F7A');
+      for (let r = 0; r < 4; r++) px(g, x + 3, y + 11 + r * 5, w - 8, 2, '#48443A');
+      px(g, x + (i % 2 ? 0 : w - 3), y + h - 9, 3, 9, brick[S]);
+    }
+    /* a sprayed tag: one continuous stroke with a darker shadow behind it,
+       not a row of dashes */
+    for (let i = 0; i < 3; i++) {
+      const x = 150 + i * 210, y = groundY - 54;
+      const col = i % 2 ? '#A32C58' : '#2C8A7C';
+      const hi = i % 2 ? '#D8508A' : '#46C2AC';
+      for (let pass = 0; pass < 2; pass++) {
+        const c = pass ? hi : '#12100E';
+        const oy = pass ? 0 : 2;
+        for (let j = 0; j <= 44; j++) {
+          const t = j / 44;
+          const sx = x + j;
+          const sy = y + oy + Math.sin(t * 7.5) * 9 + Math.sin(t * 2.1) * 4;
+          px(g, sx, sy, 3, 3, pass ? (j % 7 < 4 ? c : col) : c);
+        }
+      }
+    }
+    for (let i = 0; i < 7; i++) {
+      const x = 30 + i * 104;
+      dither(g, x, top + 6, 14, 40 + (i % 3) * 20, null, brick[S], 8);
+    }
     dumpster(g, 90, groundY, metal);
     dumpster(g, 520, groundY, TOWN.wallC);
     for (let i = 0; i < 3; i++) streetLamp(g, 200 + i * 220, groundY - 6, 58, metal, true);

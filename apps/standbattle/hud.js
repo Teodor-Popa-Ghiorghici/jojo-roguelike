@@ -77,9 +77,9 @@ export function drawHUD(g, W, H, combat, tsec) {
   text(g, 'JOTARO KUJO', 40, 9, { scale: 1, color: '#E8ECFF', shadow: '#05060C' });
   bar(g, 40, 18, 150, 9, pf, gh.p, ['#0E4A22', '#17692F', '#2FA34A', '#5FD672', '#B6FFC0']);
   text(g, Math.ceil(player.hp) + '/' + player.maxHp, 194, 19, { scale: 1, color: '#9FB0D8' });
-  bar(g, 40, 30, 118, 6, player.persistence / player.maxPersistence, 0,
+  bar(g, 40, 30, 112, 6, player.persistence / player.maxPersistence, 0,
     ['#0B2E4A', '#12587E', '#1E93B8', '#4FD0E6', '#C4F6FF']);
-  text(g, 'PERSISTENCE', 162, 30, { scale: 1, color: '#5FA8C8' });
+  text(g, 'PERSISTENCE', 158, 30, { scale: 1, color: '#5FA8C8' });
 
   if (enemy.hp > 0 || (enemy.deathTimer || 0) > 0) {
     const name = enemy.def.standName || enemy.def.name;
@@ -125,7 +125,7 @@ export function drawBanner(g, W, H, combat, tsec) {
     text(g, combat.banner, W / 2, 79, { scale: 2, align: 'center', color: '#FFE6F0', outline: '#3A0A1E' });
     g.restore();
   }
-  if (combat.log[0]) {
+  if (combat.log[0] && combat.outcome === 'fighting') {
     text(g, combat.log[0], W / 2, 104, { scale: 1, align: 'center', color: '#B8C4E8', shadow: '#05060C' });
   }
   if (combat.outcome === 'win') {

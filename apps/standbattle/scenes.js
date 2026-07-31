@@ -57,12 +57,12 @@ export function drawTitle(g, W, H, tsec, cleared) {
   });
 
   const cx = Math.round(W * 0.34);
-  text(g, 'A JOJO ROGUELIKE', cx, 62, { scale: 1, align: 'center', color: '#E0A0D8', shadow: '#3A0A2E' });
-  text(g, 'STAND', cx, 74, { scale: 4, align: 'center', color: '#FFE86A', outline: '#3A0A1E', shadow: '#B02F72', shadowDy: 2 });
-  text(g, 'BATTLE', cx, 108, { scale: 4, align: 'center', color: '#FFE86A', outline: '#3A0A1E', shadow: '#B02F72', shadowDy: 2 });
-  text(g, 'ARENA', cx, 142, { scale: 4, align: 'center', color: '#FFA0CB', outline: '#3A0A1E', shadow: '#7A1D4E', shadowDy: 2 });
-  px(g, cx - 74, 176, 148, 1, '#6A7396');
-  text(g, 'JOTARO KUJO / STAR PLATINUM', cx, 182, { scale: 1, align: 'center', color: '#B8C4E8' });
+  text(g, 'A JOJO ROGUELIKE', cx, 48, { scale: 1, align: 'center', color: '#E0A0D8', shadow: '#3A0A2E' });
+  text(g, 'STAND', cx, 60, { scale: 4, align: 'center', color: '#FFE86A', outline: '#3A0A1E', shadow: '#B02F72', shadowDy: 2 });
+  text(g, 'BATTLE', cx, 94, { scale: 4, align: 'center', color: '#FFE86A', outline: '#3A0A1E', shadow: '#B02F72', shadowDy: 2 });
+  text(g, 'ARENA', cx, 128, { scale: 4, align: 'center', color: '#FFA0CB', outline: '#3A0A1E', shadow: '#7A1D4E', shadowDy: 2 });
+  px(g, cx - 74, 166, 148, 1, '#6A7396');
+  text(g, 'JOTARO KUJO / STAR PLATINUM', cx, 174, { scale: 1, align: 'center', color: '#B8C4E8' });
   text(g, 'CLICK TO BEGIN', cx, H - 46, {
     scale: 2, align: 'center', color: '#FFFFFF', outline: '#1E2A5A',
     alpha: 0.55 + 0.45 * Math.sin(tsec * 3)

@@ -92,7 +92,7 @@ function kqHead(g, sk, pose, phase, tsec) {
 }
 
 function kqArm(g, j, pose, front, phase) {
-  drawLimb(g, j, front ? 15 : 13.5, front ? 11.5 : 10.5, 9, KQ.pink);
+  drawLimb(g, j, front ? 15 : 13.5, front ? 11.5 : 10.5, 9, KQ.pink, null, front ? '#040407' : null);
   const dx = j.wrist.x - j.elbow.x, dy = j.wrist.y - j.elbow.y;
   const len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
   limbShape(g, j.elbow.x + ux * 2, j.elbow.y + uy * 2, j.wrist.x - ux * 3, j.wrist.y - uy * 3, 12, 10, KQ.black);
@@ -105,8 +105,8 @@ function kqArm(g, j, pose, front, phase) {
   hand(g, j.wrist.x + ux * 4, j.wrist.y + uy * 4, j.foreAng, 13, KQ.black, 'claw');
 }
 
-function kqLeg(g, j, phase) {
-  drawLimb(g, j, 17, 13, 10, KQ.pink);
+function kqLeg(g, j, phase, front) {
+  drawLimb(g, j, 17, 13, 10, KQ.pink, null, front ? '#040407' : null);
   limbShape(g, j.knee.x, j.knee.y, j.ankle.x, j.ankle.y, 13, 11, KQ.black);
   poly(g, [[j.knee.x - 6, j.knee.y - 5], [j.knee.x + 6, j.knee.y - 4], [j.knee.x + 5, j.knee.y + 4], [j.knee.x - 5, j.knee.y + 3]], KQ.pink[LT]);
   const a = Math.max(-0.4, Math.min(0.4, j.shinAng * 0.3));
@@ -121,7 +121,7 @@ export function drawKillerQueen(g, pose, phaseIndex, tsec) {
   kqLeg(g, sk.legRear, ph);
   kqArm(g, sk.armRear, pose, false, ph);
   chest(g, sk, ph, tsec || 0);
-  kqLeg(g, sk.legFront, ph);
+  kqLeg(g, sk.legFront, ph, true);
   kqHead(g, sk, pose, ph, tsec || 0);
   kqArm(g, sk.armFront, pose, true, ph);
   return sk;
