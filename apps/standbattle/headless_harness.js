@@ -17,11 +17,17 @@ import { ENEMIES } from './data.js';
    instead of an idle standoff: close the gap while out of the player's
    own light-attack range, tap light otherwise. This is scripted, not
    random -- the only randomness anywhere in the run is the seeded 'ai'
-   stream combat.js already draws its enemy-pattern choices from, so the
-   same seed reproduces the exact same fight, frame for frame. */
+   stream combat.js already draws its enemy-pattern/token choices from, so
+   the same seed reproduces the exact same fight, frame for frame. Targets
+   whichever enemy is first alive in `combat.enemies` (Phase 5) -- for a
+   single-enemy fight that's the same enemy as before; for a crowd it's a
+   simple "always fight the nearest-spawned survivor" policy, enough to
+   prove the crowd sim reaches a decisive, reproducible outcome headless. */
 const LIGHT_RANGE = 60;
 function scriptFrame(combat) {
-  const p = combat.player, e = combat.enemy;
+  const p = combat.player;
+  const e = combat.enemies.find(x => x.hp > 0);
+  if (!e) return;
   const dist = Math.abs(e.x - p.x);
   const closing = dist > LIGHT_RANGE;
   combat.setKey('right', closing && e.x >= p.x);
@@ -32,9 +38,9 @@ function scriptFrame(combat) {
   }
 }
 
-export function runHeadlessFight({ seed = 'harness-seed', enemyId = 'morioh_thug', frames = 1000 } = {}) {
+export function runHeadlessFight({ seed = 'harness-seed', enemyId = 'morioh_thug', encounter = null, frames = 1000 } = {}) {
   const rng = createRng(seed);
-  const combat = createCombat(ENEMIES[enemyId], [], { shakeEnabled: false }, rng);
+  const combat = createCombat(encounter || ENEMIES[enemyId], [], { shakeEnabled: false }, rng);
   let stepped = 0;
   for (; stepped < frames && combat.outcome === 'fighting'; stepped++) {
     scriptFrame(combat);
@@ -44,7 +50,8 @@ export function runHeadlessFight({ seed = 'harness-seed', enemyId = 'morioh_thug
     seed, enemyId, framesRequested: frames, framesRun: stepped,
     outcome: combat.outcome,
     player: { hp: combat.player.hp, maxHp: combat.player.maxHp, x: combat.player.x, z: combat.player.z },
-    enemy: { hp: combat.enemy.hp, maxHp: combat.enemy.maxHp, x: combat.enemy.x, z: combat.enemy.z }
+    enemy: { hp: combat.enemy.hp, maxHp: combat.enemy.maxHp, x: combat.enemy.x, z: combat.enemy.z },
+    enemies: combat.enemies.map(e => ({ id: e.id, hp: e.hp, x: e.x, z: e.z }))
   };
 }
 

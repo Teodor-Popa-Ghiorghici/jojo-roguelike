@@ -31,6 +31,21 @@ export const PLAYER_SPEED_PER_FRAME = 172 / SIM_HZ; // exported: combat_stand.js
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
+/* Phase 5: the sim can hold N enemies (combat.enemies), so "the enemy" the
+   player faces/dodges toward is whichever is actually closest, not a fixed
+   `combat.enemy` (that alias still exists, but only for boss/solo-fight
+   render/HUD code that never sees more than one). Falls back to the alias
+   when nothing is alive (mid death-animation) so callers never see null. */
+function nearestAliveEnemy(combat) {
+  let best = null, bestDist = Infinity;
+  for (const e of combat.enemies) {
+    if (e.hp <= 0) continue;
+    const d = Math.abs(e.x - combat.player.x);
+    if (d < bestDist) { bestDist = d; best = e; }
+  }
+  return best || combat.enemy;
+}
+
 export function performAction(combat, kind) {
   if (kind === 'dodge') startDodge(combat);
   else if (kind === 'parry') defense.startClash(combat.player);
@@ -46,7 +61,7 @@ function startDodge(combat) {
      ahead of defense.startStep's own charge check so a denied Project-Step
      doesn't consume a charge it never spent. */
   if (combat.player.projecting) { combat.dispatcher.fire('onMoveDenied', {}); return; }
-  if (defense.startStep(combat.player, combat.enemy)) {
+  if (defense.startStep(combat.player, nearestAliveEnemy(combat))) {
     combat.dispatcher.runEffect('onStepStart', { entity: combat.player, cancelled: false });
   } else {
     combat.dispatcher.fire('onMoveDenied', {});
@@ -81,7 +96,7 @@ function attemptMove(combat, moveId) {
   player.activeMove = move;
   player.movePhase = 'windup';
   player.moveFrame = 0;
-  player.hitboxSpent = new Set();
+  player.hitboxSpent = new Map(); // hitbox index -> Set of enemies already hit by that window (Phase 5, crowd)
   player.hitsLanded = 0;
   player.armorConsumedThisMove = false;
   if (persistenceCost) spendPersistence(player, persistenceCost);
@@ -111,14 +126,19 @@ function tryCancel(combat) {
 }
 
 function resolveHitboxes(combat, move) {
-  const player = combat.player, enemy = combat.enemy, stand = combat.stand, bus = combat.dispatcher;
-  if (enemy.hp <= 0) return;
+  const player = combat.player, stand = combat.stand, bus = combat.dispatcher;
   /* GDD §3.1: "The Stand deals all damage." The hitbox geometry (overlaps(),
      hitbox.js) reads the attacker's own x/z/facing, so `stand` -- not
      `player` -- is the attacker here; `move.type`/costs/timing are still
      entirely the User's own resolved move (player.moveFrame etc, unchanged
-     below), only where the hit physically originates has moved. */
-  stepMoveHitboxes(stand, move, player.moveFrame, player.hitboxSpent, enemy, hb => {
+     below), only where the hit physically originates has moved.
+
+     Phase 5: tested against every living enemy, not a fixed `combat.enemy`
+     -- a single wide hitbox can connect with several crowd enemies in one
+     swing (hitbox.js's stepMoveHitboxes tracks "already hit" per target). */
+  const targets = combat.enemies.filter(e => e.hp > 0);
+  if (!targets.length) return;
+  stepMoveHitboxes(stand, move, player.moveFrame, player.hitboxSpent, targets, (hb, i, enemy) => {
     player.hitsLanded++;
     const critInfo = rollCrit({ attacker: player, rng: combat.combatRng, stats: combat.stats, bus });
     const dmgCtx = { attacker: player, defender: enemy, hitbox: hb, move, isPlayerAttacker: true, critMult: critInfo.mult, bus };
@@ -153,12 +173,16 @@ function resolveHitboxes(combat, move) {
     /* onHit stays a pure post-hoc EVENT (unchanged since Phase 0) --
        audio.js/fx.js read this payload shape and neither needs nor gets
        a mutable ctx (invariant 8: render/audio never write sim state). */
-    bus.fire('onHit', { moveType: move.type, combo: player.comboCount, finishing: dead, crit: critInfo.crit });
+    bus.fire('onHit', { moveType: move.type, combo: player.comboCount, finishing: dead, crit: critInfo.crit, target: enemy });
     if (dead) {
       enemy.deathTimer = DEATH_ANIM_FRAMES;
       gainMomentum(player, 15);
       bus.runEffect('onKill', { entity: player, target: enemy, combo: player.comboCount, cancelled: false });
-      combat.outcome = 'win';
+      /* Win is no longer decided here: encounter.js's stepEncounter checks
+         the encounter's own winCondition (data field, 'killAll' today)
+         once per frame, after every enemy has been stepped -- the single
+         choke point Rule Fights/encounter objectives (GDD §15) will extend
+         instead of every kill site needing its own win-condition logic. */
     }
   });
 }
@@ -195,11 +219,11 @@ function tryConsumeBuffer(combat) {
 }
 
 export function updatePlayer(combat) {
-  const player = combat.player, enemy = combat.enemy, keys = combat.keys;
+  const player = combat.player, keys = combat.keys;
   if (player.hurtFlash > 0) player.hurtFlash = Math.max(0, player.hurtFlash - 1 / HURT_FLASH_FRAMES);
   if (player.knockVx) { player.x += player.knockVx; player.knockVx *= 0.8; if (Math.abs(player.knockVx) < 0.3) player.knockVx = 0; }
   player.x = clamp(player.x, ARENA_MIN, ARENA_MAX);
-  player.facing = enemy.x >= player.x ? 1 : -1;
+  player.facing = nearestAliveEnemy(combat).x >= player.x ? 1 : -1;
   defense.tickStepCharges(player);
   tickResources(player);
   if (player.bufferedAction) {

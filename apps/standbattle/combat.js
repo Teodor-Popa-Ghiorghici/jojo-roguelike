@@ -1,21 +1,23 @@
-/* Combat engine — orchestration only. Builds the player/enemy fighters,
-   the hook dispatcher and the juice system, wires input, and steps the
-   two per-entity systems (combat_player.js, combat_enemy.js) once per
-   sim frame. All the actual frame-data/hitbox/defensive-triangle logic
-   lives in those two files plus resolvers.js/hitbox.js/defense.js/
-   poise.js/resources.js (tech §2.4/§2.5, GDD §3.6-3.9) — this file only
-   ties them together, exactly like combat_enemy.js's player/enemy split
-   already did in Phase 1.
+/* Combat engine — orchestration only. Builds the player/Stand, the hook
+   dispatcher and the juice system, wires input, and steps the sim's three
+   per-frame systems (combat_player.js, combat_stand.js, combat_crowd.js)
+   once per sim frame. All the actual frame-data/hitbox/defensive-triangle/
+   AI logic lives in those files plus resolvers.js/hitbox.js/defense.js/
+   poise.js/resources.js/token.js/encounter.js -- this file only ties them
+   together.
 
-   Phase 1 (tech §5): the sim steps in whole frames at a fixed 60Hz rate
-   (sim_loop.js) instead of being driven directly by rAF's variable ms
-   delta, and `combat.entities` holds every fighter generically (fighter.js's
-   entity/component store). */
+   Phase 5 (GDD §4.4/§16): the arena now holds an *encounter* -- one or
+   more waves of one or more enemies (encounter.js) -- instead of a single
+   hardcoded enemy. `enemyOrEncounterDef` accepts either shape: a real
+   encounter def, or a legacy single enemy/boss def, which
+   encounter.js's normalizeEncounter() wraps into a trivial one-wave
+   encounter. A boss/elite/solo fight is therefore just an N=1 crowd, not a
+   separate code path -- combat.tokenSystem (token.js) and combat_crowd.js
+   run over it exactly the same way, and are a no-op for it (one candidate,
+   two token slots, always granted one immediately). */
 
 import { STANDS } from './data.js';
-import { createEnemyAI } from './ai.js';
-import { createPlayerFighter, createEnemyFighter, createStandFighter, clampPersistence } from './fighter.js';
-import { initPoise } from './poise.js';
+import { createPlayerFighter, createStandFighter, clampPersistence } from './fighter.js';
 import { createDispatcher } from './hooks.js';
 import { createStatPipeline } from './stats.js';
 import { createContentRegistry, loadContent } from './content_registry.js';
@@ -24,13 +26,17 @@ import { stepStatuses } from './status.js';
 import { createJuice } from './juice.js';
 import { createFixedStepLoop } from './sim_loop.js';
 import { updatePlayer, performAction, ACTION_KEYS } from './combat_player.js';
-import { stepEnemyMovementAndAI } from './combat_enemy.js';
 import { stepStand } from './combat_stand.js';
-import { ARENA_MIN, ARENA_MAX, FRAME_MS } from './constants.js';
+import { stepCrowd } from './combat_crowd.js';
+import { createEncounter, normalizeEncounter, stepEncounter } from './encounter.js';
+import { createTokenSystem } from './token.js';
+import { ARENA_MIN, FRAME_MS } from './constants.js';
 
 const INPUT_BUFFER_FRAMES = 9; // 150ms -- matches tech §3.6's "9-frame buffer" exactly
+const TOKEN_MELEE_COUNT = 2; // GDD §16 -- 3 under Menace's Crowded condition, not implemented yet
+const TOKEN_RANGED_COUNT = 1; // GDD §16 -- a separate, smaller pool; unused by Phase 5's melee-only roster
 
-export function createCombat(enemyDef, runBuffs, opts, rng) {
+export function createCombat(enemyOrEncounterDef, runBuffs, opts, rng) {
   opts = opts || {};
   const standDef = STANDS.star_platinum;
 
@@ -55,29 +61,37 @@ export function createCombat(enemyDef, runBuffs, opts, rng) {
      its owner link exists before anything (AI, render) can run a frame. */
   const stand = createStandFighter(player);
 
-  const enemy = createEnemyFighter(enemyDef, ARENA_MAX - 72, opts.hpMult, opts.speedMult, opts.tint);
-  const isBoss = !!enemyDef.phases;
   const aiRng = rng.stream('ai');
   const combatRng = rng.stream('combat'); // reserved since Phase 0, now used for crit rolls (resolvers.js)
-  enemy.ai = createEnemyAI(isBoss ? enemyDef.phases[0].attackPatterns : enemyDef.attackPatterns);
-  enemy.brain = enemy.ai; // Brain component (tech §2.3): the AI profile/module list fighter.js reserved
-  initPoise(enemy, enemyDef); // GDD §3.9 -- was an Infinity/Infinity stub until this phase
+  const encounterRng = rng.stream('encounter'); // Phase 5 -- encounter_budget.js's composition draws, kept separate
 
   const juice = createJuice(opts.shakeEnabled);
   const keys = {};
   function push(msg) { combat.log.unshift(msg); combat.log.length = Math.min(4, combat.log.length); }
 
   /* combat.entities is the arena's real entity store (tech §2.3): "the
-     arena holds N entities, not player + enemy". Phase 4 adds the Stand as
-     a genuine third entry (camera/depth-sort — render_adapter.js — already
-     generalized to N entities in Phase 1 for exactly this). combat.player/
-     .enemy/.stand stay as named references into it so the render/pose/HUD/
-     audio layers keep working unmodified where this phase doesn't touch them. */
+     arena holds N entities, not player + enemy". combat.enemies (Phase 5)
+     is the crowd's own entity list -- grows as later waves spawn.
+     combat.enemy stays as a compat alias to enemies[0] purely for the
+     boss/solo-fight-only render/HUD/sprite code (sprite_boss.js, hud.js's
+     detailed single-enemy panel, index.js's tense-music check) that never
+     sees more than one enemy in this phase's scope. */
   const combat = {
-    player, enemy, stand, entities: [player, stand, enemy], juice, dispatcher, stats, isBoss, keys, combatRng,
-    outcome: 'fighting', banner: enemyDef.name || enemyDef.standName, bannerTimer: 84, // 1400ms
+    player, stand, enemies: [], entities: [player, stand], juice, dispatcher, stats, keys, combatRng, encounterRng,
+    tokenSystem: createTokenSystem(TOKEN_MELEE_COUNT, TOKEN_RANGED_COUNT),
+    spawnOpts: { hpMult: opts.hpMult, speedMult: opts.speedMult, tint: opts.tint },
+    outcome: 'fighting', banner: '', bannerTimer: 84, // 1400ms
     log: [], pushLog: push, debug: false
   };
+
+  const encounterDef = normalizeEncounter(enemyOrEncounterDef);
+  combat.encounter = createEncounter(encounterDef);
+  stepEncounter(combat, combat.encounter, combat.spawnOpts, encounterRng); // spawns wave 0 synchronously
+
+  combat.enemy = combat.enemies[0];
+  combat.isBoss = combat.enemies.length === 1 && !!combat.enemies[0].def.phases;
+  combat.banner = encounterDef.label ||
+    (combat.enemies.length === 1 ? (combat.enemies[0].def.name || combat.enemies[0].def.standName) : 'MULTIPLE HOSTILES');
 
   /* Edge-triggered: an action fires once per physical key-down, never on
      hold (tech audit item #1 -- dodge used to re-fire every frame it was
@@ -102,7 +116,7 @@ export function createCombat(enemyDef, runBuffs, opts, rng) {
     if (juice.update(FRAME_MS)) return; // hit-stop freezes the sim; see the Phase 1 report
     stepStand(combat); // before updatePlayer so player.projecting/.strained are fresh this frame (GDD §3.2/§3.4)
     updatePlayer(combat);
-    stepEnemyMovementAndAI(combat, enemyDef, aiRng);
+    stepCrowd(combat, aiRng); // tokens (GDD §16) -> every enemy's AI/attack -> wave-spawn/win-condition (encounter.js)
     combat.entities.forEach(stepStatuses); // GDD §3.10 / tech §2.6 -- statuses are data, the engine only ticks them
     if (player.hp <= 0 && combat.outcome === 'fighting') combat.outcome = 'lose';
   }

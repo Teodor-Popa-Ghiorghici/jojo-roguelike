@@ -45,18 +45,25 @@ export function pointOverlaps(x, z, defender, tags, radius) {
 /* Whole-frame active-window test for a player move's hitbox list (tech
    §2.4: hitboxes carry absolute `from`/`to` frame numbers within the
    move's timeline; multi-hit moves list several windows rather than
-   dividing activeFrames by hitCount). `spent` is a per-activation Set of
-   hitbox indices already used, so a window connects at most once even
-   though it may be checked across several frames while it waits for the
-   target to be in range. */
-export function stepMoveHitboxes(attacker, move, frame, spent, defender, onHit) {
+   dividing activeFrames by hitCount). `defenders` is an array (Phase 5,
+   crowd combat) so one wide hitbox can connect with several enemies in the
+   same swing, the standard beat-'em-up rule. `spent` is a Map from hitbox
+   index to a Set of defenders already hit by that window, so a window
+   connects at most once per target -- not once total -- even though it may
+   be checked across several frames while some targets are still out of
+   range. */
+export function stepMoveHitboxes(attacker, move, frame, spent, defenders, onHit) {
   move.hitboxes.forEach((hb, i) => {
-    if (spent.has(i)) return;
     if (frame < hb.from || frame > hb.to) return;
-    if (defender.hp <= 0) return;
-    if (overlaps(attacker, hb, defender)) {
-      spent.add(i);
-      onHit(hb, i);
-    }
+    let hitSet = spent.get(i);
+    if (!hitSet) { hitSet = new Set(); spent.set(i, hitSet); }
+    defenders.forEach(defender => {
+      if (hitSet.has(defender)) return;
+      if (defender.hp <= 0) return;
+      if (overlaps(attacker, hb, defender)) {
+        hitSet.add(defender);
+        onHit(hb, i, defender);
+      }
+    });
   });
 }

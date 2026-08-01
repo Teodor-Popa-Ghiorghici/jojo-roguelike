@@ -219,7 +219,11 @@ export function wireFx(combat, fx, groundY) {
 
   d.on('onHit', ev => {
     const big = ev.moveType === 'heavy' || ev.finishing;
-    const x = E.x - P.facing * 12, y = groundY - 54 - Math.random() * 12;
+    /* Phase 5: onHit now carries `target` (combat_player.js) -- the
+       specific crowd enemy that was actually hit -- so impact fx land on
+       it rather than always anchoring near combat.enemy (enemies[0]). */
+    const hitX = ev.target ? ev.target.x : E.x;
+    const x = hitX - P.facing * 12, y = groundY - 54 - Math.random() * 12;
     fx.spawn('impact', { x, y, size: big ? 15 : 9, dir: P.facing > 0 ? 0 : Math.PI, life: big ? 0.3 : 0.2, big });
     fx.spawn('lines', { x, y, dir: P.facing, count: big ? 11 : 6, len: big ? 54 : 30, life: 0.22, color: '#FFFFFF' });
     if (big) fx.spawn('shock', { x, y, size: 46, life: 0.3, color: FX.spark[4], squash: 0.7 });

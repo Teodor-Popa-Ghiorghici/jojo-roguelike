@@ -2,7 +2,12 @@
    transitions, poise/stagger and projectiles. Split out of combat.js to
    keep both files under the repo's 300-line rule -- this follows the
    player/enemy seam combat.js already had. Every timer here is a whole
-   sim frame at the fixed 60Hz step. */
+   sim frame at the fixed 60Hz step.
+
+   Phase 5: operates on one `enemy` passed in by combat_crowd.js's
+   per-frame loop over `combat.enemies`, instead of a fixed `combat.enemy`
+   -- a boss/elite/solo fight is just a one-entry crowd (encounter.js), so
+   this file no longer needs a separate code path for it. */
 
 import { stepEnemyAI, defaultApproachRange } from './ai.js';
 import { pickAttackTarget, pickAttackTargetPoint } from './combat_stand.js';
@@ -15,18 +20,17 @@ const PHASE_BANNER_FRAMES = 108; // 1800ms
 const HURT_FLASH_FRAMES = 9; // 150ms fade -- matches combat_player.js's player-side constant
 const PROJECTILE_HIT_RADIUS = 10;
 
-export function updateEnemyPhase(combat, enemyDef) {
-  const enemy = combat.enemy;
-  if (!combat.isBoss || enemy.state !== 'alive') return;
+export function updateEnemyPhase(combat, enemy) {
+  if (!enemy.def.phases || enemy.state !== 'alive') return;
   const frac = enemy.hp / enemy.maxHp;
   const next = enemy.phaseIndex + 1;
-  const phases = enemyDef.phases;
+  const phases = enemy.def.phases;
   if (next < phases.length && frac <= phases[enemy.phaseIndex].hpAbove) {
     enemy.phaseIndex = next;
     enemy.ai.patternIds = phases[next].attackPatterns;
     enemy.ai.approachRange = defaultApproachRange(phases[next].attackPatterns);
     enemy.invulnFrames = PHASE_INVULN_FRAMES;
-    combat.banner = enemyDef.transitionLine || 'PHASE 2';
+    combat.banner = enemy.def.transitionLine || 'PHASE 2';
     combat.bannerTimer = PHASE_BANNER_FRAMES;
     combat.juice.triggerHitstop(160);
     combat.juice.triggerShake(0, -1, 8, 260);
@@ -34,14 +38,16 @@ export function updateEnemyPhase(combat, enemyDef) {
   }
 }
 
-/* Advances enemy movement, poise, its attack-pattern AI and its
+/* Advances one enemy's movement, poise, its attack-pattern AI and its
    projectiles by exactly one sim frame. Melee patterns resolve their hit
    the instant the active window opens via hitbox.js's AABB overlaps()
    (tech §2.4/§2.5) instead of the old `Math.abs(dx) <= range` scalar
-   check; resolveIncomingAttack (combat_player.js) then runs the
-   defensive-triangle dispatch (Step/Guard/Clash) against it. */
-export function stepEnemyMovementAndAI(combat, enemyDef, aiRng) {
-  const { player, enemy, juice, dispatcher } = combat;
+   check; resolveIncomingAttack (combat_defense.js) then runs the
+   defensive-triangle dispatch (Step/Guard/Clash) against it. `enemy.hasToken`
+   (token.js, GDD §16) gates whether this enemy's AI may actually commit to
+   a pattern this frame -- everyone still moves/poises/regens regardless. */
+export function stepEnemyMovementAndAI(combat, enemy, aiRng) {
+  const { player, dispatcher } = combat;
   if (enemy.hp <= 0) {
     if (enemy.deathTimer > 0) enemy.deathTimer = Math.max(0, enemy.deathTimer - 1);
     if (enemy.hurtFlash > 0) enemy.hurtFlash = Math.max(0, enemy.hurtFlash - 1 / HURT_FLASH_FRAMES);
@@ -66,7 +72,7 @@ export function stepEnemyMovementAndAI(combat, enemyDef, aiRng) {
     if (dist > enemy.ai.approachRange) { enemy.x += dir * enemy.speedPxPerFrame; enemy.moving = true; }
   }
   const wasWindup = enemy.ai.state === 'windup';
-  const ev = stepEnemyAI(enemy.ai, Math.abs(player.x - enemy.x), aiRng);
+  const ev = stepEnemyAI(enemy.ai, dist, aiRng, enemy.hasToken);
   if (!wasWindup && enemy.ai.state === 'windup') dispatcher.fire('onTelegraphStart', { pattern: enemy.ai.pattern });
   if (ev && ev.type === 'spawnMelee') {
     /* GDD §3.1/deliverable 5: the User and the Stand are separately
@@ -75,14 +81,14 @@ export function stepEnemyMovementAndAI(combat, enemyDef, aiRng) {
        aggro using the same deterministic 'ai' rng stream as pattern
        selection. */
     const target = pickAttackTarget(combat, enemy, ev.pattern.hitbox, aiRng);
-    if (target) resolveIncomingAttack(combat, ev.pattern, enemy.x, target);
+    if (target) resolveIncomingAttack(combat, ev.pattern, enemy.x, target, enemy);
   } else if (ev && ev.type === 'spawnProjectile') {
     enemy.projectiles.push({
       x: enemy.x, z: enemy.z, dir: player.x >= enemy.x ? 1 : -1, pattern: ev.pattern,
       life: ev.pattern.activeFrames, speedPerFrame: ev.pattern.projectileSpeed / SIM_HZ
     });
   }
-  updateEnemyPhase(combat, enemyDef);
+  updateEnemyPhase(combat, enemy);
 
   for (let i = enemy.projectiles.length - 1; i >= 0; i--) {
     const pr = enemy.projectiles[i];
@@ -92,7 +98,7 @@ export function stepEnemyMovementAndAI(combat, enemyDef, aiRng) {
     pr.x += pr.dir * pr.speedPerFrame;
     const target = pickAttackTargetPoint(combat, pr.x, pr.z, pr.pattern.tags, PROJECTILE_HIT_RADIUS, aiRng);
     if (target) {
-      resolveIncomingAttack(combat, pr.pattern, pr.x, target);
+      resolveIncomingAttack(combat, pr.pattern, pr.x, target, enemy);
       enemy.projectiles.splice(i, 1);
       continue;
     }
