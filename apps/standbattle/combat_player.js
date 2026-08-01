@@ -17,6 +17,7 @@ import {
   resolveMoveFrames, resolveDamage, applyHit, rollCrit, resolvePoiseDamage, resolvePersistenceCost
 } from './resolvers.js';
 import { stepMoveHitboxes } from './hitbox.js';
+import { collectHitTargets, realTargetOf, dmgMultOf } from './boss_parts.js';
 import { spendPersistence, gainPersistence, gainMomentum, tickResources } from './resources.js';
 import { applyPoiseDamage } from './poise.js';
 import { applyStatus } from './status.js';
@@ -135,13 +136,19 @@ function resolveHitboxes(combat, move) {
 
      Phase 5: tested against every living enemy, not a fixed `combat.enemy`
      -- a single wide hitbox can connect with several crowd enemies in one
-     swing (hitbox.js's stepMoveHitboxes tracks "already hit" per target). */
-  const targets = combat.enemies.filter(e => e.hp > 0);
+     swing (hitbox.js's stepMoveHitboxes tracks "already hit" per target).
+     Phase 6: `collectHitTargets` (boss_parts.js) also folds in any
+     revealed boss part as its own stable hit-testable target alongside
+     the enemy's own body -- `realTargetOf`/`dmgMultOf` unwrap a hit back
+     into "which enemy took it" and "at what multiplier" below. */
+  const targets = collectHitTargets(combat.enemies);
   if (!targets.length) return;
-  stepMoveHitboxes(stand, move, player.moveFrame, player.hitboxSpent, targets, (hb, i, enemy) => {
+  stepMoveHitboxes(stand, move, player.moveFrame, player.hitboxSpent, targets, (hb, i, target) => {
+    const enemy = realTargetOf(target);
+    const partMult = dmgMultOf(target);
     player.hitsLanded++;
     const critInfo = rollCrit({ attacker: player, rng: combat.combatRng, stats: combat.stats, bus });
-    const dmgCtx = { attacker: player, defender: enemy, hitbox: hb, move, isPlayerAttacker: true, critMult: critInfo.mult, bus };
+    const dmgCtx = { attacker: player, defender: enemy, hitbox: hb, move, isPlayerAttacker: true, critMult: critInfo.mult, partMult, bus };
     const dmg = resolveDamage(dmgCtx);
     const { dead } = applyHit({ defender: enemy }, dmg);
     applyPoiseDamage(enemy, resolvePoiseDamage({ hitbox: hb, bus }));
@@ -151,8 +158,9 @@ function resolveHitboxes(combat, move) {
     player.comboCount++; // flavour counter for pose/fx/audio only -- Momentum is the real resource now
     combat.juice.triggerHitstop(move.hitstopMs);
     combat.juice.triggerShake(player.facing, 0, dead ? 6 : (move.type === 'heavy' || move.type === 'rush') ? 4 : 2, 140);
-    combat.juice.spawnBurst(enemy.x, 154, '#FFFF55', dead ? 18 : 6, 90, player.facing, -0.4);
+    combat.juice.spawnBurst(enemy.x, 154, partMult > 1 ? '#FFE86A' : '#FFFF55', dead ? 18 : 6, 90, player.facing, -0.4);
     if (critInfo.crit) combat.pushLog('CRIT!');
+    if (partMult > 1) combat.pushLog('WEAK POINT!'); // GDD §4.6 Phase 3 -- confirms the exposed User was actually hit
 
     /* onHitLanded (mutable, tech §2.1): fires after the hit is confirmed
        to have connected and dealt damage -- the hook a Fragment applying

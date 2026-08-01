@@ -81,6 +81,23 @@ function onPhaseTransition() {
 
 function onMoveDenied() { if (S()) S().deny(); }
 
+/* GDD §18B purge beat: a rising, crystalline cue distinct from
+   onPhaseTransition's descending sawtooth stab -- "the boss just became
+   unbothered" should sound different from "the boss got angrier". */
+function onPurge() {
+  const snd = S();
+  if (!snd) return;
+  snd.noise(80, { freq: 2400, q: 2.4, vol: 0.05 });
+  [900, 1300, 1800].forEach((f, i) => snd.tone(f, 130, { type: 'sine', vol: 0.045, delay: i * 0.05 }));
+}
+
+function onPartExposed() {
+  const snd = S();
+  if (!snd) return;
+  snd.tone(1900, 55, { type: 'square', vol: 0.04 });
+  snd.tone(2500, 90, { type: 'triangle', vol: 0.035, delay: 0.05 });
+}
+
 export function wireCombatAudio(combat) {
   const d = combat.dispatcher;
   d.on('onHit', onHit);
@@ -91,6 +108,8 @@ export function wireCombatAudio(combat) {
   d.on('onTelegraphStart', onTelegraphStart);
   d.on('onPhaseTransition', onPhaseTransition);
   d.on('onMoveDenied', onMoveDenied);
+  d.on('onPurge', onPurge);
+  d.on('onPartExposed', onPartExposed);
 }
 
 export function sfxVictory() {

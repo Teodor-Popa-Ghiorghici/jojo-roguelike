@@ -17,7 +17,7 @@ import { drawKillerQueen } from './sprite_boss.js';
 import { drawBackground, drawForeground } from './background.js';
 import { drawHUD, drawBanner } from './hud.js';
 import { createFx, wireFx } from './fx.js';
-import { sceneEvents, telegraph, projectiles, particles, groundDust, tetherLine } from './arena.js';
+import { sceneEvents, telegraph, projectiles, particles, groundDust, tetherLine, exposedParts, hazardZones } from './arena.js';
 import { drawDebugOverlay } from './debug_overlay.js';
 import { text } from './font.js';
 import { FX, JOTARO, S, SH, BASE, LT, RIM } from './palette.js';
@@ -187,6 +187,8 @@ export function drawCombat(g, W, H, combat, tsec, dtMs, nodeId) {
   drawBackground(g, W, H, scene, camX, tsec, GROUND_Y);
 
   telegraph(g, combat.enemies, camX, tsec);
+  hazardZones(g, combat.hazards, camX, tsec);
+  exposedParts(g, combat.enemies, camX, tsec);
   groundDust(g, ppose, player.x - camX, GROUND_Y + zToYOffset(player.z), tsec, 0);
   combat.enemies.forEach(e => {
     const epose = enemyPoses.get(e);

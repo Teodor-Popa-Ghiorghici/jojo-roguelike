@@ -75,7 +75,7 @@ const RED_RAMP = ['#4A0B12', '#7C141E', '#C2242E', '#E85A54', '#FFB0A0'];
    can be selected by "exactly one enemy" (any solo fight: n1, an elite,
    the boss) rather than by `combat.isBoss` specifically, which used to be
    the same thing but no longer is once an elite node can bring an escort. */
-function drawSoloEnemyPanel(g, W, enemy, gh) {
+function drawSoloEnemyPanel(g, W, enemy, gh, tsec) {
   let f = gh.e; if (f == null) f = 1;
   const ef = enemy.maxHp ? enemy.hp / enemy.maxHp : 0;
   f += (ef - f) * 0.06;
@@ -91,6 +91,21 @@ function drawSoloEnemyPanel(g, W, enemy, gh) {
       px(g, W - 40 - i * 9, 30, 7, 5, on ? '#FF6B9E' : '#3A2030');
       px(g, W - 40 - i * 9, 30, 7, 2, on ? '#FFC2D8' : '#4A2A3A');
     }
+  }
+  /* GDD §4.6 Phase 3's target indicator, deliverable 5: a callout in the
+     same HUD style the moment any part is exposed (arena.js's
+     exposedParts() carries the world-space half of this same cue). */
+  if (enemy.parts.some(p => p.revealed)) {
+    const pulse = 0.55 + 0.45 * Math.sin(tsec * 10);
+    g.save();
+    g.globalAlpha = pulse;
+    text(g, 'WEAK POINT EXPOSED', W - 190, 41, { scale: 1, color: '#FFE86A', outline: '#3A2A06' });
+    g.restore();
+  }
+  /* GDD §18B purge beat: the immunity window read back as a HUD state,
+     not just a one-off cue -- matches the tint reused on the sprite. */
+  if (enemy.statusImmuneFrames > 0) {
+    text(g, 'IMMUNE', W - 40, 41, { scale: 1, align: 'right', color: '#CFE8FF', outline: '#0B2E4A' });
   }
 }
 
@@ -113,10 +128,10 @@ function drawCrowdEnemyPanel(g, W, alive, gh) {
   });
 }
 
-function drawEnemyPanel(g, W, combat, gh) {
+function drawEnemyPanel(g, W, combat, gh, tsec) {
   const alive = combat.enemies.filter(e => e.hp > 0 || (e.deathTimer || 0) > 0);
   if (!alive.length) return;
-  if (alive.length === 1) drawSoloEnemyPanel(g, W, alive[0], gh);
+  if (alive.length === 1) drawSoloEnemyPanel(g, W, alive[0], gh, tsec);
   else drawCrowdEnemyPanel(g, W, alive, gh);
 }
 
@@ -174,7 +189,7 @@ export function drawHUD(g, W, H, combat, tsec) {
     g.restore();
   }
 
-  drawEnemyPanel(g, W, combat, gh);
+  drawEnemyPanel(g, W, combat, gh, tsec);
 
   if (player.comboCount > 1) {
     const pulse = 1 + Math.min(0.6, player.comboCount * 0.04) * (0.5 + 0.5 * Math.sin(tsec * 22));

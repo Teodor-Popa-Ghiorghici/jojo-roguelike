@@ -81,6 +81,12 @@ function applyDot(entity, amount) {
 export function applyStatus(entity, statusId, stacks) {
   const def = STATUS_DEFS[statusId];
   if (!def) throw new Error(`[status] Unknown status "${statusId}"`);
+  /* GDD §18B purge beat (purge.js): a fixed 6s window where nothing can
+     apply a new status to this entity -- generic on the entity, not
+     boss-specific, so any future source of immunity reuses this same
+     field/check. Silently a no-op, same shape as any other "this attack
+     had no effect" outcome elsewhere in the sim. */
+  if (entity.statusImmuneFrames > 0) return;
   const amount = stacks == null ? 1 : stacks;
 
   if (def.stackRule === STACK_RULES.INDEPENDENT) {
@@ -131,6 +137,7 @@ export function registerStatusHit(entity) {
 /* One sim frame of status bookkeeping for one entity: ticks, then expiry.
    Call once per frame per entity (combat.js, after the player/enemy step). */
 export function stepStatuses(entity) {
+  if (entity.statusImmuneFrames > 0) entity.statusImmuneFrames -= 1;
   if (!entity.statuses || !entity.statuses.length) return;
   for (let i = entity.statuses.length - 1; i >= 0; i--) {
     const inst = entity.statuses[i];

@@ -45,7 +45,12 @@ export const PRIORITY = { ADD: 0, MULTIPLY: 1000, CLAMP: 2000 };
 export const EVENT_HOOKS = [
   'onRunStart', 'onFloorStart', 'onHit', 'onNodeClear', 'onRunEnd',
   'onDodgeSuccess', 'onParrySuccess', 'onMoveDenied',
-  'onTelegraphStart', 'onPhaseTransition'
+  'onTelegraphStart', 'onPhaseTransition',
+  /* Phase 6 (GDD §4.6/§18B): the purge beat's cue and the exposed-User
+     reveal's cue -- both distinct moments from onPhaseTransition, which
+     still fires alongside a part reveal (it IS a phase transition too),
+     so fx.js/audio.js can layer a second, more specific cue on top. */
+  'onPurge', 'onPartExposed'
 ];
 
 /* Minimum combat surface required "live and provably mutable" by the

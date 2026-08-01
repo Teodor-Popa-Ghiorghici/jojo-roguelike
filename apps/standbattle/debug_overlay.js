@@ -58,6 +58,17 @@ function drawEnemyHitbox(g, enemy, camX) {
   rectOutline(g, hx, cy + 40, hb.w, 30, '#FF9900');
 }
 
+/* Phase 6: revealed boss parts (boss_parts.js) get their own outline so
+   the exposed-User hurtbox's real size/position is verifiable, not just
+   the pulsing reticle everyone else sees. */
+function drawPartHitboxes(g, enemy, camX) {
+  enemy.parts.forEach(part => {
+    if (!part.revealed) return;
+    const cx = part.x - camX, cy = GROUND_Y + zToYOffset(part.z);
+    rectOutline(g, cx, cy, part.w, part.h, '#FFE86A');
+  });
+}
+
 function statLine(g, x, y, str, color) {
   text(g, str, x, y, { scale: 1, color: color || '#8FFF8F', shadow: '#000000' });
 }
@@ -80,9 +91,11 @@ export function drawDebugOverlay(g, W, H, combat, camX) {
     if (enemy.hp <= 0) return;
     drawHurtbox(g, enemy, camX, enemy.ai && enemy.ai.state === 'staggered' ? '#FF5555' : '#FFAA40');
     drawEnemyHitbox(g, enemy, camX);
+    drawPartHitboxes(g, enemy, camX);
     statLine(g, 4, y,
       `E${idx}:${enemy.ai.state}${enemy.ai.pattern ? '/' + enemy.ai.pattern.id : ''}` +
-      ` tok:${enemy.hasToken ? 'Y' : 'n'} poise:${Math.ceil(enemy.poise.current)}/${enemy.poise.max}`,
+      ` tok:${enemy.hasToken ? 'Y' : 'n'} poise:${Math.ceil(enemy.poise.current)}/${enemy.poise.max}` +
+      ` purge:${enemy.purged ? 'Y' : 'n'} imm:${enemy.statusImmuneFrames || 0}`,
       '#FFC080');
     y += 8;
   });
