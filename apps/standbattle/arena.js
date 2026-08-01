@@ -166,6 +166,21 @@ export function particles(g, juice, camX) {
   });
 }
 
+/* Tether legibility (GDD §3.2, Phase 4 deliverable 6): a thin line between
+   User and Stand, drawn only while there's an actual reason to watch it --
+   Projected or over-extended -- so it doesn't clutter the default anchored
+   view. Pure watcher, same rule as everything else in this file: reads
+   combat.player/.stand, writes nothing back. */
+export function tetherLine(g, combat, camX) {
+  const player = combat.player, stand = combat.stand;
+  if (!player.projecting && !player.strained) return;
+  const py = GROUND_Y + zToYOffset(player.z) - 40, sy = GROUND_Y + zToYOffset(stand.z) - 40;
+  g.save();
+  g.globalAlpha = player.strained ? 0.85 : 0.4;
+  line(g, player.x - camX, py, stand.x - camX, sy, 1, player.strained ? '#FF5555' : '#B98BFF');
+  g.restore();
+}
+
 export function groundDust(g, pose, x, y, tsec, seedOffset) {
   if (!pose.dust) return;
   for (let i = 0; i < 4; i++) {

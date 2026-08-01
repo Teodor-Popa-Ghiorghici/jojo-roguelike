@@ -10,6 +10,7 @@
 import { resolveDamage, applyHit, rollCrit, resolvePoiseDamage } from './resolvers.js';
 import { applyPoiseDamage } from './poise.js';
 import { onMomentumHitTaken } from './resources.js';
+import { applyFeedbackDamage, staggerStand } from './combat_stand.js';
 import * as defense from './defense.js';
 import { DEATH_ANIM_FRAMES } from './constants.js';
 
@@ -23,9 +24,18 @@ const PLAYER_IFRAME_FRAMES = 8; // GDD §3.9: i-frames after being hit, prevents
 const CLASH_COUNTER_HITBOX = { dmg: 12, poise: 14, tags: ['clash', 'melee'] };
 
 /* Order matters: Step's invulnerability beats everything, a live Clash
-   window beats a raw hit, Guard mitigates what's left. */
-export function resolveIncomingAttack(combat, pattern, atX) {
+   window beats a raw hit, Guard mitigates what's left. `target` (Phase 4,
+   picked by combat_stand.js's pickAttackTarget/pickAttackTargetPoint) is
+   either combat.player or combat.stand: a hit aimed at the Stand skips the
+   whole defensive triangle below and routes straight through feedback —
+   see combat_stand.js's file header for why. */
+export function resolveIncomingAttack(combat, pattern, atX, target) {
   const player = combat.player, enemy = combat.enemy, juice = combat.juice, dispatcher = combat.dispatcher;
+
+  if (target === combat.stand) {
+    applyFeedbackDamage(combat, pattern, atX);
+    return;
+  }
 
   if (player.state === 'attack' && player.activeMove.armor && !player.armorConsumedThisMove &&
     player.moveFrame >= player.activeMove.armor.from && player.moveFrame <= player.activeMove.armor.to &&
@@ -104,6 +114,7 @@ function applyIncomingDamage(combat, pattern, atX, guardMult, causesHitstun) {
   dmg = incomingCtx.cancelled ? 0 : incomingCtx.damage;
 
   const dead = applyHit({ defender: player }, dmg).dead;
+  staggerStand(combat); // GDD §3.1: damage to the User (guarded chip included) staggers the Stand too
   player.knockVx = (player.x >= atX ? 1 : -1) * pattern.knockback;
   onMomentumHitTaken(player);
   juice.triggerHitstop(pattern.hitstopMs);

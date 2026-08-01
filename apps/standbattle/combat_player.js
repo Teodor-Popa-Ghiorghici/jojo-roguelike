@@ -27,7 +27,7 @@ import { ARENA_MIN, ARENA_MAX, ARENA_Z_MIN, ARENA_Z_MAX, SIM_HZ, DEATH_ANIM_FRAM
 export const ACTION_KEYS = new Set(['light', 'medium', 'heavy', 'special', 'rush', 'dodge', 'parry']);
 
 const HURT_FLASH_FRAMES = 9; // 150ms fade
-const PLAYER_SPEED_PER_FRAME = 172 / SIM_HZ;
+export const PLAYER_SPEED_PER_FRAME = 172 / SIM_HZ; // exported: combat_stand.js's Strain drag is 40% of this (GDD §3.2)
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
@@ -42,6 +42,10 @@ export function performAction(combat, kind) {
    firing unconditionally keeps "Start" meaning "a step has begun", and
    needs no signature change to defense.js. */
 function startDodge(combat) {
+  /* GDD §3.4: "you cannot Step" while the Stand is Projected -- checked
+     ahead of defense.startStep's own charge check so a denied Project-Step
+     doesn't consume a charge it never spent. */
+  if (combat.player.projecting) { combat.dispatcher.fire('onMoveDenied', {}); return; }
   if (defense.startStep(combat.player, combat.enemy)) {
     combat.dispatcher.runEffect('onStepStart', { entity: combat.player, cancelled: false });
   } else {
@@ -107,16 +111,21 @@ function tryCancel(combat) {
 }
 
 function resolveHitboxes(combat, move) {
-  const player = combat.player, enemy = combat.enemy, bus = combat.dispatcher;
+  const player = combat.player, enemy = combat.enemy, stand = combat.stand, bus = combat.dispatcher;
   if (enemy.hp <= 0) return;
-  stepMoveHitboxes(player, move, player.moveFrame, player.hitboxSpent, enemy, hb => {
+  /* GDD §3.1: "The Stand deals all damage." The hitbox geometry (overlaps(),
+     hitbox.js) reads the attacker's own x/z/facing, so `stand` -- not
+     `player` -- is the attacker here; `move.type`/costs/timing are still
+     entirely the User's own resolved move (player.moveFrame etc, unchanged
+     below), only where the hit physically originates has moved. */
+  stepMoveHitboxes(stand, move, player.moveFrame, player.hitboxSpent, enemy, hb => {
     player.hitsLanded++;
     const critInfo = rollCrit({ attacker: player, rng: combat.combatRng, stats: combat.stats, bus });
     const dmgCtx = { attacker: player, defender: enemy, hitbox: hb, move, isPlayerAttacker: true, critMult: critInfo.mult, bus };
     const dmg = resolveDamage(dmgCtx);
     const { dead } = applyHit({ defender: enemy }, dmg);
     applyPoiseDamage(enemy, resolvePoiseDamage({ hitbox: hb, bus }));
-    enemy.knockVx = (enemy.x >= player.x ? 1 : -1) * move.knockback;
+    enemy.knockVx = (enemy.x >= stand.x ? 1 : -1) * move.knockback;
     gainPersistence(player, move.gains.persistence || 0);
     gainMomentum(player, move.gains.momentum || 0);
     player.comboCount++; // flavour counter for pose/fx/audio only -- Momentum is the real resource now
@@ -200,6 +209,11 @@ export function updatePlayer(combat) {
 
   if (player.state === 'idle') {
     if (keys.guard) { defense.startGuard(player); return; }
+    /* GDD §3.4: "the User is rooted" while the Stand is Projected -- input
+       is still read every frame by combat_stand.js's stepStand (it drives
+       the Stand, not the User), so the User simply stops responding to its
+       own movement keys rather than gating them out at the input layer. */
+    if (player.projecting) { player.moving = false; return; }
     let mv = 0, mz = 0;
     if (keys.left) mv -= 1;
     if (keys.right) mv += 1;

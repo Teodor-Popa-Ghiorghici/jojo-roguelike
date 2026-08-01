@@ -27,13 +27,13 @@ import { SIM_HZ, Z_REST } from './constants.js';
    replacing the old "hold to stay safe" exploit (tech audit item #1). */
 export const DODGE_CHARGE_MAX = 2;
 
-function attachComponentStubs(entity) {
+export function attachComponentStubs(entity) {
   entity.body = { hurtboxW: 30, hurtboxH: 64 }; // unused until Phase 2 hitboxes
   entity.poise = { current: Infinity, max: Infinity }; // overwritten for enemies by poise.js's initPoise
   entity.statuses = []; // populated by status.js's applyStatus, ticked by stepStatuses
-  entity.standLink = null; // unused until the User/Stand split exists
+  entity.standLink = null; // real since Phase 4 (createPlayerFighter/createStandFighter link the two)
   entity.frames = null; // unused until the frame-data timeline exists
-  entity.aggro = 1; // unused until crowds/target-selection exist
+  entity.aggro = 1; // real since Phase 4 -- combat_stand.js's target picker weights by this
   return entity;
 }
 
@@ -57,9 +57,35 @@ export function createPlayerFighter(stand, x, z) {
     guarding: false, breakActive: false,
     bufferedAction: null,
     squash: 0, hurtFlash: 0, comboCount: 0, moving: false,
+    projecting: false, strained: false, // GDD §3.2/§3.4 (Phase 4) -- set every frame by combat_stand.js's stepStand
     brain: null // the User is player-controlled, not AI-driven
   };
   return attachComponentStubs(entity);
+}
+
+/* The Stand -- GDD §3.1, Phase 4. A real second entity (Transform/Body/
+   Frames per tech §2.3), not a render-only offset the way it was through
+   Phase 3 (render.js used to fake its position purely from the player's
+   own x/facing). Has no HP of its own -- all HP lives on the User (§3.1)
+   -- so there is no Health component here, only the fields combat_stand.js
+   needs to move it and route damage through it: `staggerFrames` (a landed
+   hit on the User staggers the Stand, GDD §3.1), `wasProjecting` (Project
+   start/end edge detection) and `breakActive` (kept for symmetry with the
+   enemy's Perfect-Clash flag resolvers.js already reads off `ctx.defender`,
+   even though nothing sets it on the Stand yet). Spawns at the owner's own
+   position -- stepStand() recomputes the real anchor position on the very
+   first frame regardless, so the initial value here is never actually seen. */
+export function createStandFighter(owner) {
+  const entity = {
+    id: 'stand', kind: 'stand', owner,
+    x: owner.x, z: owner.z, facing: owner.facing,
+    breakActive: false, hurtFlash: 0,
+    staggerFrames: 0, wasProjecting: false
+  };
+  attachComponentStubs(entity);
+  entity.standLink = { owner };
+  owner.standLink = { stand: entity };
+  return entity;
 }
 
 export function createEnemyFighter(def, x, hpMult, speedMult, tint, z) {

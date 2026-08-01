@@ -52,21 +52,31 @@ export const EVENT_HOOKS = [
    Phase 3 mission. onKill/onDamageTaken/onPerfectClash existed as EVENTS
    before this phase (fired post-hoc, nothing could change from them) and
    are promoted to EFFECTS here — see the bus.on() note above for why
-   audio.js/fx.js need no changes for that promotion. */
+   audio.js/fx.js need no changes for that promotion.
+
+   onProjectStart/onProjectEnd/onTetherStrain/onFeedbackDamage (Phase 4,
+   GDD §3.1-3.4): the User/Stand duality's own mutable surface, fired from
+   combat_stand.js. onFeedbackDamage is the hook a defensive Fragment
+   ("-10% feedback taken") targets; onTetherStrain runs every over-extended
+   frame (mutable, not just a notification) so a Fragment can soften or
+   waive the drain/drag before it's applied, same shape as onDamageIncoming. */
 export const EFFECT_HOOKS = [
   'onMoveStart', 'onHitResolve', 'onHitLanded', 'onCritCheck', 'onKill',
   'onDamageIncoming', 'onDamageTaken', 'onStaggerStart', 'onStepStart',
-  'onClashSuccess', 'onPerfectClash', 'onGuardBreak'
+  'onClashSuccess', 'onPerfectClash', 'onGuardBreak',
+  'onProjectStart', 'onProjectEnd', 'onTetherStrain', 'onFeedbackDamage'
 ];
 
 /* getMaxPersistence/getMoveSpeed extend the mission's minimum four
    (getDamage/getMoveFrames/getPoiseDamage/getPersistenceCost) — needed to
    port the three existing run buffs off their bespoke fighter.js fields
    (deliverable 6). Tech §2.1: "extend this list as content requires it,
-   but register new hooks in one place." */
+   but register new hooks in one place." getTetherLength/getFeedbackRate
+   (Phase 4) wrap stats.js's resolveTetherPx/resolveFeedbackPct the same
+   way getMoveFrames wraps resolveMoveFrames -- see resolvers.js. */
 export const QUERY_HOOKS = [
   'getDamage', 'getMoveFrames', 'getPoiseDamage', 'getPersistenceCost',
-  'getMaxPersistence', 'getMoveSpeed'
+  'getMaxPersistence', 'getMoveSpeed', 'getTetherLength', 'getFeedbackRate'
 ];
 
 const HOOK_KIND = {};

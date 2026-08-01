@@ -5,7 +5,7 @@
    sim frame at the fixed 60Hz step. */
 
 import { stepEnemyAI, defaultApproachRange } from './ai.js';
-import { overlaps, pointOverlaps } from './hitbox.js';
+import { pickAttackTarget, pickAttackTargetPoint } from './combat_stand.js';
 import { stepPoise, STAGGER_FRAMES, STAGGER_DAMAGE_MULT } from './poise.js';
 import { resolveIncomingAttack } from './combat_defense.js';
 import { ARENA_MIN, ARENA_MAX, SIM_HZ } from './constants.js';
@@ -69,7 +69,13 @@ export function stepEnemyMovementAndAI(combat, enemyDef, aiRng) {
   const ev = stepEnemyAI(enemy.ai, Math.abs(player.x - enemy.x), aiRng);
   if (!wasWindup && enemy.ai.state === 'windup') dispatcher.fire('onTelegraphStart', { pattern: enemy.ai.pattern });
   if (ev && ev.type === 'spawnMelee') {
-    if (overlaps(enemy, ev.pattern.hitbox, player)) resolveIncomingAttack(combat, ev.pattern, enemy.x);
+    /* GDD §3.1/deliverable 5: the User and the Stand are separately
+       targetable hurtboxes -- pickAttackTarget (combat_stand.js) tests
+       overlap against both and, if both are hit, weights the pick by
+       aggro using the same deterministic 'ai' rng stream as pattern
+       selection. */
+    const target = pickAttackTarget(combat, enemy, ev.pattern.hitbox, aiRng);
+    if (target) resolveIncomingAttack(combat, ev.pattern, enemy.x, target);
   } else if (ev && ev.type === 'spawnProjectile') {
     enemy.projectiles.push({
       x: enemy.x, z: enemy.z, dir: player.x >= enemy.x ? 1 : -1, pattern: ev.pattern,
@@ -84,8 +90,9 @@ export function stepEnemyMovementAndAI(combat, enemyDef, aiRng) {
     if (pr.homing === undefined) pr.homing = pr.pattern.homing;
     if (pr.homing) pr.dir = player.x >= pr.x ? 1 : -1;
     pr.x += pr.dir * pr.speedPerFrame;
-    if (pointOverlaps(pr.x, pr.z, player, pr.pattern.tags, PROJECTILE_HIT_RADIUS)) {
-      resolveIncomingAttack(combat, pr.pattern, pr.x);
+    const target = pickAttackTargetPoint(combat, pr.x, pr.z, pr.pattern.tags, PROJECTILE_HIT_RADIUS, aiRng);
+    if (target) {
+      resolveIncomingAttack(combat, pr.pattern, pr.x, target);
       enemy.projectiles.splice(i, 1);
       continue;
     }
