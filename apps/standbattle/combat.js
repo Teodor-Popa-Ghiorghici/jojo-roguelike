@@ -14,7 +14,7 @@
 
 import { STANDS } from './data.js';
 import { createEnemyAI } from './ai.js';
-import { createPlayerFighter, createEnemyFighter, clampPersistence } from './fighter.js';
+import { createPlayerFighter, createEnemyFighter, createStandFighter, clampPersistence } from './fighter.js';
 import { initPoise } from './poise.js';
 import { createDispatcher } from './hooks.js';
 import { createStatPipeline } from './stats.js';
@@ -25,13 +25,14 @@ import { createJuice } from './juice.js';
 import { createFixedStepLoop } from './sim_loop.js';
 import { updatePlayer, performAction, ACTION_KEYS } from './combat_player.js';
 import { stepEnemyMovementAndAI } from './combat_enemy.js';
+import { stepStand } from './combat_stand.js';
 import { ARENA_MIN, ARENA_MAX, FRAME_MS } from './constants.js';
 
 const INPUT_BUFFER_FRAMES = 9; // 150ms -- matches tech §3.6's "9-frame buffer" exactly
 
 export function createCombat(enemyDef, runBuffs, opts, rng) {
   opts = opts || {};
-  const stand = STANDS.star_platinum;
+  const standDef = STANDS.star_platinum;
 
   /* Effect/query/content pipeline (tech §2.1/§2.2/§2.9, Phase 3) is built
      BEFORE any fighter, because the run buffs' getMaxPersistence query
@@ -46,9 +47,13 @@ export function createCombat(enemyDef, runBuffs, opts, rng) {
   const contentRegistry = createContentRegistry();
   loadContent(contentRegistry, dispatcher);
 
-  const player = createPlayerFighter(stand, ARENA_MIN + 122);
+  const player = createPlayerFighter(standDef, ARENA_MIN + 122);
   player.maxPersistence = dispatcher.runQuery('getMaxPersistence', player.maxPersistence, { entity: player });
   clampPersistence(player);
+  /* The Stand (GDD §3.1, Phase 4) — a real second entity, not the render-
+     only offset it was through Phase 3. Created right after the player so
+     its owner link exists before anything (AI, render) can run a frame. */
+  const stand = createStandFighter(player);
 
   const enemy = createEnemyFighter(enemyDef, ARENA_MAX - 72, opts.hpMult, opts.speedMult, opts.tint);
   const isBoss = !!enemyDef.phases;
@@ -63,11 +68,13 @@ export function createCombat(enemyDef, runBuffs, opts, rng) {
   function push(msg) { combat.log.unshift(msg); combat.log.length = Math.min(4, combat.log.length); }
 
   /* combat.entities is the arena's real entity store (tech §2.3): "the
-     arena holds N entities, not player + enemy". combat.player/.enemy
-     stay as named references into it so the render/pose/HUD/audio layers
-     -- none of which this phase touches -- keep working unmodified. */
+     arena holds N entities, not player + enemy". Phase 4 adds the Stand as
+     a genuine third entry (camera/depth-sort — render_adapter.js — already
+     generalized to N entities in Phase 1 for exactly this). combat.player/
+     .enemy/.stand stay as named references into it so the render/pose/HUD/
+     audio layers keep working unmodified where this phase doesn't touch them. */
   const combat = {
-    player, enemy, entities: [player, enemy], juice, dispatcher, stats, isBoss, keys, combatRng,
+    player, enemy, stand, entities: [player, stand, enemy], juice, dispatcher, stats, isBoss, keys, combatRng,
     outcome: 'fighting', banner: enemyDef.name || enemyDef.standName, bannerTimer: 84, // 1400ms
     log: [], pushLog: push, debug: false
   };
@@ -93,6 +100,7 @@ export function createCombat(enemyDef, runBuffs, opts, rng) {
     if (combat.outcome !== 'fighting') return;
     if (combat.bannerTimer > 0) combat.bannerTimer -= 1;
     if (juice.update(FRAME_MS)) return; // hit-stop freezes the sim; see the Phase 1 report
+    stepStand(combat); // before updatePlayer so player.projecting/.strained are fresh this frame (GDD §3.2/§3.4)
     updatePlayer(combat);
     stepEnemyMovementAndAI(combat, enemyDef, aiRng);
     combat.entities.forEach(stepStatuses); // GDD §3.10 / tech §2.6 -- statuses are data, the engine only ticks them

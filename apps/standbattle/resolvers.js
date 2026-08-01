@@ -24,7 +24,14 @@
 import { MOVES } from './moves.js';
 import { PATTERNS } from './ai.js';
 import { applyDamage } from './fighter.js';
-import { resolveSpeedScalar, resolveCritChance } from './stats.js';
+import { resolveSpeedScalar, resolveCritChance, resolveTetherPx, resolveFeedbackPct } from './stats.js';
+
+/* GDD §3.2: "−20% damage penalty while over-extended." Read directly off
+   `ctx.attacker.strained` (combat_stand.js sets this once per frame, same
+   pattern resolveDamage already uses for `defender.breakActive`/
+   `defender.ai.state === 'staggered'`) so the penalty stays inside this
+   one resolveDamage choke point rather than being applied at a call site. */
+const STRAIN_DAMAGE_MULT = 0.8;
 
 /* World units of move reach per point of the Stand's Range stat (spec
    §2.1). Star Platinum's Range is 2, so the base (reachMult 1.0) move
@@ -118,6 +125,7 @@ export function resolveDamage(ctx) {
   if (ctx.isPlayerAttacker) {
     dmg = ctx.hitbox.dmg * (ctx.attacker.stand.stats.power / 8);
     dmg *= resolveMomentumMult(ctx.attacker.momentum);
+    if (ctx.attacker.strained) dmg *= STRAIN_DAMAGE_MULT; // GDD §3.2 -- Stand damage only, never incoming
   } else {
     dmg = ctx.pattern.dmgMult * ctx.attacker.def.power * 2;
   }
@@ -172,4 +180,23 @@ export function applyHit(ctx, dmg) {
   const dead = applyDamage(ctx.defender, dmg);
   ctx.defender.breakActive = false;
   return { dead };
+}
+
+/* The tether length (GDD §3.2: `26 * Range`) and the Stand/User feedback
+   rate (GDD §3.3: `clamp(0.70 - 0.065*range, 0.10, 0.70)`). stats.js
+   already computed both as real numbers since Phase 3 (`resolveTetherPx`/
+   `resolveFeedbackPct`) but nothing consumed them -- Phase 4 is that
+   consumer. Same shape as resolveMoveFrames: the stat pipeline's cached
+   layered value, then the getTetherLength/getFeedbackRate query as the
+   last step, so a Fragment can rewrite either generically. */
+export function resolveTetherLength(entity, stats, bus) {
+  let tether = resolveTetherPx(entity, stats);
+  if (bus) tether = bus.runQuery('getTetherLength', tether, { entity });
+  return tether;
+}
+
+export function resolveFeedbackRate(entity, stats, bus) {
+  let pct = resolveFeedbackPct(entity, stats);
+  if (bus) pct = bus.runQuery('getFeedbackRate', pct, { entity });
+  return pct;
 }

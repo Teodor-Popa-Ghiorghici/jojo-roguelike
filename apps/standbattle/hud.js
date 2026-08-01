@@ -6,6 +6,7 @@ import { px, poly, disc, line } from './draw.js';
 import { text, textWidth } from './font.js';
 import { FX, JOTARO, THUG, ANGELO, KQ, S, SH, BASE, LT, RIM } from './palette.js';
 import { DODGE_CHARGE_MAX } from './fighter.js';
+import { resolveTetherLength, resolveFeedbackRate } from './resolvers.js';
 
 const ghosts = new WeakMap();
 
@@ -98,6 +99,28 @@ export function drawHUD(g, W, H, combat, tsec) {
     px(g, 40 + i * 10, 50, 7, 2, on ? '#C8F8FF' : '#243C48');
   }
   text(g, 'STEP', 64, 50, { scale: 1, color: '#5FA8C8' });
+
+  /* User/Stand duality readout (GDD §3.1-3.4, Phase 4 deliverable 6):
+     tether is a fill bar (how close to over-extended, at a glance) rather
+     than a fourth numeric bar competing with HP/Persistence/Momentum;
+     feedback rate is fixed per Stand so it's just a number; Strain only
+     appears -- pulsing -- while it's actually costing the player anything. */
+  const tetherPx = resolveTetherLength(player, combat.stats, combat.dispatcher);
+  const feedbackPct = resolveFeedbackRate(player, combat.stats, combat.dispatcher);
+  const standDist = Math.hypot(combat.stand.x - player.x, combat.stand.z - player.z);
+  bar(g, 40, 60, 112, 6, Math.min(1, standDist / tetherPx), 0,
+    player.strained
+      ? ['#4A0B12', '#7C141E', '#C2242E', '#E85A54', '#FFB0A0']
+      : ['#2A1E4A', '#453279', '#6B4FC2', '#9B7FE8', '#D8C8FF']);
+  text(g, 'TETHER ' + Math.round(tetherPx) + 'PX', 158, 60, { scale: 1, color: player.strained ? '#FF8080' : '#B49AE0' });
+  text(g, 'FEEDBACK ' + Math.round(feedbackPct * 100) + '%', 40, 70, { scale: 1, color: '#B49AE0' });
+  if (player.strained) {
+    const pulse = 0.6 + 0.4 * Math.sin(tsec * 18);
+    g.save();
+    g.globalAlpha = pulse;
+    text(g, 'STRAIN', 133, 70, { scale: 1, color: '#FF6B6B', outline: '#3A0A0A' });
+    g.restore();
+  }
 
   if (enemy.hp > 0 || (enemy.deathTimer || 0) > 0) {
     const name = enemy.def.standName || enemy.def.name;

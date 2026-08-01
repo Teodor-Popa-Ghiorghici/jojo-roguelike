@@ -20,7 +20,15 @@ export function checkTelegraphFairness() {
   return { pass: results.every(r => r.ok), results };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+/* Pre-existing bug found during Phase 4 browser verification, fixed here:
+   this file is imported into the live runtime (content_registry.js ->
+   combat.js -> index.js), but `process` is a Node-only global -- any
+   in-browser load of the app threw a ReferenceError at this line before
+   the guard below, i.e. the app has been unplayable in an actual browser
+   since Phase 3 wired content_registry.js in. `typeof process` first
+   keeps the CLI-runnable-standalone behavior (`node .../fairness_check.js`)
+   working exactly as before. */
+if (typeof process !== 'undefined' && import.meta.url === `file://${process.argv[1]}`) {
   const { pass, results } = checkTelegraphFairness();
   results.forEach(r => console.log(`${r.ok ? 'OK  ' : 'FAIL'} ${r.id.padEnd(24)} ${r.ms.toFixed(0)}ms (>= ${MIN_TELEGRAPH_MS}ms)`));
   console.log(pass ? '\nAll telegraphs clear the fairness floor.' : '\nFAIRNESS VIOLATION.');

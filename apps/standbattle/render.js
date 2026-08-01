@@ -17,7 +17,7 @@ import { drawKillerQueen } from './sprite_boss.js';
 import { drawBackground, drawForeground } from './background.js';
 import { drawHUD, drawBanner } from './hud.js';
 import { createFx, wireFx } from './fx.js';
-import { sceneEvents, telegraph, projectiles, particles, groundDust } from './arena.js';
+import { sceneEvents, telegraph, projectiles, particles, groundDust, tetherLine } from './arena.js';
 import { drawDebugOverlay } from './debug_overlay.js';
 import { text } from './font.js';
 import { FX, JOTARO, S, SH, BASE, LT, RIM } from './palette.js';
@@ -64,7 +64,14 @@ function shadowOpts(pose) {
   return { color: '#000000', alpha: 0.30, skew: 0.9, squash: 0.26 - (pose.airborne || 0) * 0.1 };
 }
 
-function drawStand(g, player, pose, camX, tsec) {
+/* Phase 4 (GDD §3.1/§3.4): the Stand is now a real entity (combat.stand,
+   fighter.js's createStandFighter) with its own resolved (x, z) — anchored
+   ~22px ahead of the User or driven out to tether length while Projected
+   (combat_stand.js's stepStand). This function used to fake that position
+   from the player's own x/facing with a hand-tuned offset; it now just
+   stamps the sprite at the entity's real transform, the one place this
+   file's stated "additive only" exception applies this phase. */
+function drawStand(g, player, stand, pose, camX, tsec) {
   if (pose.standOut <= 0.02) return;
   const sp = standPose(pose);
   const manifest = pose.standOut;
@@ -77,8 +84,8 @@ function drawStand(g, player, pose, camX, tsec) {
   const bob = Math.sin(tsec * 3.4) * 2;
   const rushing = pose.action === 'rush' || pose.action === 'special';
   stamp(g, b, {
-    x: player.x - camX - player.facing * (rushing ? 30 : 22),
-    y: GROUND_Y + zToYOffset(player.z) - (rushing ? 22 : 10) + bob,
+    x: stand.x - camX - player.facing * (rushing ? 8 : 0),
+    y: GROUND_Y + zToYOffset(stand.z) - (rushing ? 22 : 10) + bob,
     ox: 150, oy: 214, flip: player.facing,
     outline: '#160A28', thickOutline: true,
     rim: { color: '#D5A8FF', alpha: 0.5, dx: -1, dy: -2 },
@@ -162,14 +169,21 @@ export function drawCombat(g, W, H, combat, tsec, dtMs, nodeId) {
   groundDust(g, ppose, player.x - camX, GROUND_Y + zToYOffset(player.z), tsec, 0);
   if (epose) groundDust(g, epose, enemy.x - camX, GROUND_Y + zToYOffset(enemy.z), tsec, 1.2);
 
-  drawStand(g, player, ppose, camX, tsec);
+  drawStand(g, player, combat.stand, ppose, camX, tsec);
+  tetherLine(g, combat, camX);
   /* Depth sort (render_adapter.js): farthest-z entity draws first (behind),
      nearest-z draws last (in front). Falls back to the old x-based
      left/right order when both fighters share a depth -- the common case
-     until something actually leaves the resting z. */
+     until something actually leaves the resting z. combat.entities now
+     also carries the Stand (Phase 4) purely so the camera/depth-sort see
+     it -- it has its own dedicated drawStand() call above, so the sprite
+     loop below only draws the two kinds it actually knows how to paint. */
   const drawP = () => drawFighter(g, player, ppose, camX, tsec, true, 0, rim);
   const drawE = () => epose && drawFighter(g, enemy, epose, camX, tsec, false, enemy.phaseIndex, rim);
-  depthSort(combat.entities).forEach(f => (f.kind === 'player' ? drawP : drawE)());
+  depthSort(combat.entities).forEach(f => {
+    if (f.kind === 'player') drawP();
+    else if (f.kind === 'enemy') drawE();
+  });
   drawBarrage(g, player, enemy, ppose, camX);
 
   projectiles(g, enemy, camX, tsec);
