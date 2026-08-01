@@ -12,15 +12,18 @@ import { zToYOffset } from './render_adapter.js';
 
 /* Transient, render-only reactions to state changes. Keeping them here
    (rather than in combat.js) means the fight simulation never has to
-   know that swing arcs, charge motes or footfall dust exist. */
-export function sceneEvents(combat, fx, ppose, epose, camX, tsec) {
-  const rs = combat._rs || (combat._rs = { phase: '', move: '', gait: 0, estate: '', hurt: 0 });
-  const p = combat.player, e = combat.enemy;
+   know that swing arcs, charge motes or footfall dust exist. Phase 5:
+   the per-enemy reactions (windup charge motes, hit scuffs) loop over
+   `combat.enemies` instead of a fixed single enemy, tracking each one's
+   own little bit of transition state in a Map keyed by the enemy object. */
+export function sceneEvents(combat, fx, ppose, camX, tsec) {
+  const rs = combat._rs || (combat._rs = { phase: '', move: '', gait: 0, perEnemy: new Map() });
+  const p = combat.player;
   const px0 = p.x - camX;
   // z-projected ground lines (render_adapter.js) so effects attached to a
   // fighter follow it off the resting depth instead of floating at a
   // fixed y once something actually moves on z.
-  const pY = GROUND_Y + zToYOffset(p.z), eY = GROUND_Y + zToYOffset(e.z);
+  const pY = GROUND_Y + zToYOffset(p.z);
 
   if (p.state === 'attack' && p.activeMove) {
     const key = p.activeMove.id + p.movePhase;
@@ -63,26 +66,31 @@ export function sceneEvents(combat, fx, ppose, epose, camX, tsec) {
     });
   }
 
-  /* enemy wind-up charge, colour-matched to the incoming pattern */
-  const est = e.ai ? e.ai.state + (e.ai.pattern ? e.ai.pattern.id : '') : '';
-  if (e.ai && e.ai.state === 'windup' && e.ai.pattern && Math.random() < 0.3) {
-    fx.spawn('charge', {
-      x: e.x - camX, y: eY - 76, life: 0.32, color: e.ai.pattern.telegraph
-    });
-  }
-  if (est !== rs.estate && e.ai && e.ai.state === 'active' && e.ai.pattern && !e.ai.pattern.ranged) {
-    fx.spawn('arc', {
-      x: e.x - camX + e.facing * 6, y: eY - 60, r: e.ai.pattern.range * 0.5,
-      dir: e.facing, life: 0.24, sweep: 2, a0: -1.3, color: e.ai.pattern.telegraph
-    });
-  }
-  rs.estate = est;
+  /* enemy wind-up charge (colour-matched to the incoming pattern) and hit
+     scuffs, per enemy -- Phase 5 loops the crowd instead of one fixed
+     enemy, since 2 token holders can be mid-windup simultaneously. */
+  combat.enemies.forEach(e => {
+    if (e.hp <= 0 && !(e.deathTimer > 0)) return;
+    let es = rs.perEnemy.get(e);
+    if (!es) { es = { estate: '', hurt: 0 }; rs.perEnemy.set(e, es); }
+    const eY = GROUND_Y + zToYOffset(e.z);
+    const est = e.ai ? e.ai.state + (e.ai.pattern ? e.ai.pattern.id : '') : '';
+    if (e.ai && e.ai.state === 'windup' && e.ai.pattern && Math.random() < 0.3) {
+      fx.spawn('charge', { x: e.x - camX, y: eY - 76, life: 0.32, color: e.ai.pattern.telegraph });
+    }
+    if (est !== es.estate && e.ai && e.ai.state === 'active' && e.ai.pattern && !e.ai.pattern.ranged) {
+      fx.spawn('arc', {
+        x: e.x - camX + e.facing * 6, y: eY - 60, r: e.ai.pattern.range * 0.5,
+        dir: e.facing, life: 0.24, sweep: 2, a0: -1.3, color: e.ai.pattern.telegraph
+      });
+    }
+    es.estate = est;
 
-  /* a scuff of dust when a hit knocks someone across the ground */
-  if ((e.hurtFlash || 0) > rs.hurt + 0.4) {
-    fx.spawn('dust', { x: e.x - camX, y: eY - 1, dir: p.facing, size: 12, life: 0.36 });
-  }
-  rs.hurt = e.hurtFlash || 0;
+    if ((e.hurtFlash || 0) > es.hurt + 0.4) {
+      fx.spawn('dust', { x: e.x - camX, y: eY - 1, dir: p.facing, size: 12, life: 0.36 });
+    }
+    es.hurt = e.hurtFlash || 0;
+  });
 }
 
 /* ---- world extras ------------------------------------------------------ */
@@ -111,7 +119,17 @@ function drawGlyph(g, glyph, x, y, k, color) {
   g.restore();
 }
 
-export function telegraph(g, enemy, camX, tsec) {
+/* Phase 5: draws every enemy's telegraph, not just one -- with 2 token
+   holders possible at once, this is exactly what makes "who is about to
+   commit" readable at a glance (the acceptance criterion this phase cares
+   about) without any new HUD chrome: an off-token enemy is stuck in
+   'approach' and simply never reaches this function's early-out. */
+export function telegraph(g, enemies, camX, tsec) {
+  enemies.forEach(enemy => telegraphOne(g, enemy, camX, tsec));
+}
+
+function telegraphOne(g, enemy, camX, tsec) {
+  if (enemy.hp <= 0) return;
   const ai = enemy.ai;
   if (!ai || ai.state !== 'windup' || !ai.pattern) return;
   const k = 1 - Math.max(0, ai.timer) / ai.pattern.windupFrames;
@@ -134,7 +152,11 @@ export function telegraph(g, enemy, camX, tsec) {
   }
 }
 
-export function projectiles(g, enemy, camX, tsec) {
+export function projectiles(g, enemies, camX, tsec) {
+  enemies.forEach(enemy => projectilesOne(g, enemy, camX, tsec));
+}
+
+function projectilesOne(g, enemy, camX, tsec) {
   const gy = GROUND_Y + zToYOffset(enemy.z);
   enemy.projectiles.forEach(pr => {
     const x = pr.x - camX, y = gy - 60;

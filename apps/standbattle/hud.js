@@ -68,12 +68,64 @@ function portrait(g, x, y, size, who) {
   }
 }
 
+const RED_RAMP = ['#4A0B12', '#7C141E', '#C2242E', '#E85A54', '#FFB0A0'];
+
+/* The detailed single-enemy panel (portrait, name, boss phase pips) --
+   unchanged in every pixel from before Phase 5, just factored out so it
+   can be selected by "exactly one enemy" (any solo fight: n1, an elite,
+   the boss) rather than by `combat.isBoss` specifically, which used to be
+   the same thing but no longer is once an elite node can bring an escort. */
+function drawSoloEnemyPanel(g, W, enemy, gh) {
+  let f = gh.e; if (f == null) f = 1;
+  const ef = enemy.maxHp ? enemy.hp / enemy.maxHp : 0;
+  f += (ef - f) * 0.06;
+  gh.e = f;
+  const name = enemy.def.standName || enemy.def.name;
+  portrait(g, W - 34, 8, 26, enemy.def.id);
+  text(g, name, W - 40, 9, { scale: 1, align: 'right', color: '#FFD9E4', shadow: '#05060C' });
+  bar(g, W - 190, 18, 150, 9, ef, f, RED_RAMP, true);
+  if (enemy.def.phases) {
+    const phases = enemy.def.phases.length;
+    for (let i = 0; i < phases; i++) {
+      const on = i <= enemy.phaseIndex;
+      px(g, W - 40 - i * 9, 30, 7, 5, on ? '#FF6B9E' : '#3A2030');
+      px(g, W - 40 - i * 9, 30, 7, 2, on ? '#FFC2D8' : '#4A2A3A');
+    }
+  }
+}
+
+/* Crowd panel (Phase 5): a stack of compact name+bar rows instead of one
+   portrait -- reuses the same bar()/text() primitives as everything else
+   in this file rather than new art, and is what makes "who's still up"
+   legible in a multi-enemy fight the way the solo panel always was for one. */
+function drawCrowdEnemyPanel(g, W, alive, gh) {
+  const rowH = 12;
+  alive.slice(0, 4).forEach((enemy, i) => {
+    const key = 'e' + i;
+    let f = gh[key]; if (f == null) f = 1;
+    const ef = enemy.maxHp ? enemy.hp / enemy.maxHp : 0;
+    f += (ef - f) * 0.08;
+    gh[key] = f;
+    const y = 8 + i * rowH;
+    const name = enemy.def.shortName || enemy.def.name || enemy.def.standName;
+    text(g, name, W - 8, y, { scale: 1, align: 'right', color: '#FFD9E4', shadow: '#05060C' });
+    bar(g, W - 110, y + 7, 100, 5, ef, f, RED_RAMP, true);
+  });
+}
+
+function drawEnemyPanel(g, W, combat, gh) {
+  const alive = combat.enemies.filter(e => e.hp > 0 || (e.deathTimer || 0) > 0);
+  if (!alive.length) return;
+  if (alive.length === 1) drawSoloEnemyPanel(g, W, alive[0], gh);
+  else drawCrowdEnemyPanel(g, W, alive, gh);
+}
+
 export function drawHUD(g, W, H, combat, tsec) {
-  const { player, enemy } = combat;
+  const { player } = combat;
   let gh = ghosts.get(combat);
-  if (!gh) { gh = { p: 1, e: 1 }; ghosts.set(combat, gh); }
-  const pf = player.hp / player.maxHp, ef = enemy.maxHp ? enemy.hp / enemy.maxHp : 0;
-  gh.p += (pf - gh.p) * 0.06; gh.e += (ef - gh.e) * 0.06;
+  if (!gh) { gh = { p: 1 }; ghosts.set(combat, gh); }
+  const pf = player.hp / player.maxHp;
+  gh.p += (pf - gh.p) * 0.06;
 
   portrait(g, 8, 8, 26, 'jotaro');
   text(g, 'JOTARO KUJO', 40, 9, { scale: 1, color: '#E8ECFF', shadow: '#05060C' });
@@ -122,20 +174,7 @@ export function drawHUD(g, W, H, combat, tsec) {
     g.restore();
   }
 
-  if (enemy.hp > 0 || (enemy.deathTimer || 0) > 0) {
-    const name = enemy.def.standName || enemy.def.name;
-    portrait(g, W - 34, 8, 26, enemy.def.id);
-    text(g, name, W - 40, 9, { scale: 1, align: 'right', color: '#FFD9E4', shadow: '#05060C' });
-    bar(g, W - 190, 18, 150, 9, ef, gh.e, ['#4A0B12', '#7C141E', '#C2242E', '#E85A54', '#FFB0A0'], true);
-    if (combat.isBoss) {
-      const phases = enemy.def.phases.length;
-      for (let i = 0; i < phases; i++) {
-        const on = i <= enemy.phaseIndex;
-        px(g, W - 40 - i * 9, 30, 7, 5, on ? '#FF6B9E' : '#3A2030');
-        px(g, W - 40 - i * 9, 30, 7, 2, on ? '#FFC2D8' : '#4A2A3A');
-      }
-    }
-  }
+  drawEnemyPanel(g, W, combat, gh);
 
   if (player.comboCount > 1) {
     const pulse = 1 + Math.min(0.6, player.comboCount * 0.04) * (0.5 + 0.5 * Math.sin(tsec * 22));

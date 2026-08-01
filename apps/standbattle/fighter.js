@@ -97,7 +97,9 @@ export function createEnemyFighter(def, x, hpMult, speedMult, tint, z) {
     tint: tint || null,
     state: 'alive', hurtFlash: 0, squash: 0, knockVx: 0, moving: false,
     breakActive: false, // Perfect Clash's Break flag (defense.js/resolvers.js), consumed on next hit taken
-    ai: null, projectiles: [], phaseIndex: 0, deathTimer: 0
+    ai: null, projectiles: [], phaseIndex: 0, deathTimer: 0,
+    hasToken: false, // GDD §16 (Phase 5) -- token.js's per-frame attack-token gate; encounter.js's spawnWave sets waveIndex
+    waveIndex: -1
   };
   attachComponentStubs(entity);
   entity.brain = null; // wired to entity.ai (createEnemyAI's result) once combat.js assigns it

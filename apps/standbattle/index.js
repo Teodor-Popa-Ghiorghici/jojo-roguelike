@@ -1,7 +1,7 @@
 /* Stand Battle Arena — app entry. Ties data/combat/render/map together
    behind the TempleOS app contract (mount/unmount, ctx-only I/O). */
 
-import { ACT1_MORIOH, ENEMIES, BOSS_KILLER_QUEEN, MODIFIERS, RUN_BUFFS, EVENTS, PAL } from './data.js';
+import { ACT1_MORIOH, ENEMIES, ENCOUNTERS, BOSS_KILLER_QUEEN, MODIFIERS, RUN_BUFFS, EVENTS, PAL } from './data.js';
 import { createCombat } from './combat.js';
 import { drawCombat } from './render.js';
 import { drawMap, pickNode, drawEvent, pickChoice, drawRest, pickRestContinue } from './map.js';
@@ -115,16 +115,17 @@ export default {
 
     function startCombatForNode(node) {
       const opts = { shakeEnabled };
-      let enemyDef;
-      if (node.type === 'boss') { enemyDef = BOSS_KILLER_QUEEN; }
+      let target;
+      if (node.type === 'boss') { target = BOSS_KILLER_QUEEN; }
+      else if (node.encounter) { target = ENCOUNTERS[node.encounter]; }
       else {
-        enemyDef = ENEMIES[node.enemy];
+        target = ENEMIES[node.enemy];
         if (node.modifier) {
           const m = MODIFIERS[node.modifier];
           opts.speedMult = m.speedMult; opts.hpMult = m.hpMult; opts.tint = m.tint;
         }
       }
-      const combat = createCombat(enemyDef, state.runState.buffs, opts, state.runRng);
+      const combat = createCombat(target, state.runState.buffs, opts, state.runRng);
       combat.player.hp = state.runState.hp;
       combat.player.maxHp = state.runState.maxHp;
       combat.debug = debugEnabled;

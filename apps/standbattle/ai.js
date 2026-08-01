@@ -46,6 +46,16 @@ export const PATTERNS = {
     armor: false, tags: ['ranged'],
     projectileSpeed: 440, ranged: true
   },
+  /* Knife Thug's signature (GDD §4.2 #2): short, cheap, fast -- 17 frames
+     (283ms) clears the spec §5.1/GDD §6.8 260ms fairness floor with a
+     small margin rather than sitting right on it, since this is the
+     shortest windup in the roster. */
+  quick_stab: {
+    id: 'quick_stab', label: 'STAB', windupFrames: 17, activeFrames: 6, recoverFrames: 14,
+    range: 58, dmgMult: 0.7, knockback: 10, hitstopMs: 45, telegraph: '#FF9955', glyph: 'ring',
+    armor: false, tags: ['melee', 'light'],
+    hitbox: { x: 30, z: 0, w: 58, tags: ['melee', 'light'] }
+  },
   sheer_heart_attack: {
     id: 'sheer_heart_attack', label: 'SHEER HEART ATTACK', windupFrames: 42, activeFrames: 72, recoverFrames: 31, // 700/1200/520ms
     range: 460, dmgMult: 1.7, knockback: 25, hitstopMs: 90, telegraph: '#FF55FF', glyph: 'crosshair',
@@ -105,14 +115,21 @@ export function enterStagger(ai, frames, mult) {
 /* Advances the AI state machine by exactly one sim frame. Returns an event
    object for combat.js to act on ('spawnMelee' | 'spawnProjectile' | null),
    or null when nothing new happened this frame. `rng` is the run's 'ai'
-   stream (rng.js). */
-export function stepEnemyAI(ai, dist, rng) {
+   stream (rng.js). `canCommit` (GDD §16, token.js) gates only the
+   approach->windup transition: an enemy without the attack token keeps
+   circling/holding spacing (the existing 'approach' branch already does
+   that) but may never actually throw out a pattern. Omitted/undefined
+   behaves as `true` -- a solo fight (boss/elite) has exactly one candidate
+   against 2 token slots and is always granted one, so this gate is a no-op
+   for every encounter that existed before Phase 5. */
+export function stepEnemyAI(ai, dist, rng, canCommit) {
   ai.timer -= 1;
   if (ai.state === 'staggered') {
     if (ai.timer <= 0) { ai.state = 'approach'; ai.staggerMult = 1; }
     return null;
   }
   if (ai.state === 'approach') {
+    if (canCommit === false) return null;
     if (dist <= ai.approachRange || rng.random() < 0.002) {
       ai.pattern = PATTERNS[pickPattern(ai.patternIds, dist, rng)];
       ai.state = 'windup';

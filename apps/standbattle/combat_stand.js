@@ -157,13 +157,14 @@ function resolveTarget(player, stand, hitsPlayer, hitsStand, aiRng) {
    applying directly, and never runs through Step/Guard/Clash (see file
    header: the defensive triangle is the User's own body's toolkit). No
    crit roll here, matching combat_defense.js's existing incoming-attack
-   path (enemy attacks never crit against the player in this engine). */
-export function applyFeedbackDamage(combat, pattern, atX) {
-  const { player, stand, enemy, juice, dispatcher, stats } = combat;
-  const raw = resolveDamage({ attacker: enemy, defender: stand, pattern, isPlayerAttacker: false, bus: dispatcher });
+   path (enemy attacks never crit against the player in this engine).
+   `attacker` (Phase 5) is whichever specific crowd enemy landed the hit. */
+export function applyFeedbackDamage(combat, pattern, atX, attacker) {
+  const { player, stand, juice, dispatcher, stats } = combat;
+  const raw = resolveDamage({ attacker, defender: stand, pattern, isPlayerAttacker: false, bus: dispatcher });
   const feedbackPct = resolveFeedbackRate(player, stats, dispatcher);
   const ctx = {
-    entity: player, stand, attacker: enemy, pattern,
+    entity: player, stand, attacker, pattern,
     rawDamage: raw, feedbackPct, damage: raw * feedbackPct, cancelled: false
   };
   dispatcher.runEffect('onFeedbackDamage', ctx);

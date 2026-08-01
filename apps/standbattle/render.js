@@ -94,6 +94,21 @@ function drawStand(g, player, stand, pose, camX, tsec) {
   });
 }
 
+/* Nearest living enemy to a given x -- used only for small per-frame visual
+   reach approximations (the barrage flurry's span) where "which enemy,
+   exactly" doesn't matter as much as "roughly how far to reach"; the sim
+   itself never uses this (combat_player.js has its own copy for gameplay
+   purposes -- see that file's header on why it isn't shared). */
+function nearestEnemyTo(entities, x) {
+  let best = null, bestDist = Infinity;
+  entities.forEach(e => {
+    if (e.kind !== 'enemy' || e.hp <= 0) return;
+    const d = Math.abs(e.x - x);
+    if (d < bestDist) { bestDist = d; best = e; }
+  });
+  return best;
+}
+
 /* The rush flurry is stamped separately, over the user, so the fists
    actually reach the target instead of being hidden behind his back. */
 function drawBarrage(g, player, enemy, pose, camX) {
@@ -152,22 +167,31 @@ export function drawCombat(g, W, H, combat, tsec, dtMs, nodeId) {
   const dt = frozen ? 0 : dtMs;
   if (!frozen) fx.update(dtMs);
 
-  const { player, enemy, juice } = combat;
+  const { player, juice } = combat;
   const camX = camera(combat, W);
   const ppose = playerPose(player, tsec, dt, combat.outcome);
-  const epose = (enemy.hp > 0 || (enemy.deathTimer || 0) > 0) ? enemyPose(enemy, tsec, dt) : null;
+  /* Phase 5: one pose per living-or-dying enemy, not a fixed single
+     `epose` -- keyed by entity so the depth-sort loop below can look each
+     one back up without recomputing. */
+  const enemyPoses = new Map();
+  combat.enemies.forEach(e => {
+    if (e.hp > 0 || (e.deathTimer || 0) > 0) enemyPoses.set(e, enemyPose(e, tsec, dt));
+  });
 
   const scene = SCENE_FOR[nodeId] || 'street';
   const rim = SCENE_LIGHT[scene];
-  if (!frozen) sceneEvents(combat, fx, ppose, epose, camX, tsec);
+  if (!frozen) sceneEvents(combat, fx, ppose, camX, tsec);
 
   g.save();
   g.translate(juice.shakeX, juice.shakeY);
   drawBackground(g, W, H, scene, camX, tsec, GROUND_Y);
 
-  if (enemy.hp > 0) telegraph(g, enemy, camX, tsec);
+  telegraph(g, combat.enemies, camX, tsec);
   groundDust(g, ppose, player.x - camX, GROUND_Y + zToYOffset(player.z), tsec, 0);
-  if (epose) groundDust(g, epose, enemy.x - camX, GROUND_Y + zToYOffset(enemy.z), tsec, 1.2);
+  combat.enemies.forEach(e => {
+    const epose = enemyPoses.get(e);
+    if (epose) groundDust(g, epose, e.x - camX, GROUND_Y + zToYOffset(e.z), tsec, 1.2);
+  });
 
   drawStand(g, player, combat.stand, ppose, camX, tsec);
   tetherLine(g, combat, camX);
@@ -175,18 +199,20 @@ export function drawCombat(g, W, H, combat, tsec, dtMs, nodeId) {
      nearest-z draws last (in front). Falls back to the old x-based
      left/right order when both fighters share a depth -- the common case
      until something actually leaves the resting z. combat.entities now
-     also carries the Stand (Phase 4) purely so the camera/depth-sort see
-     it -- it has its own dedicated drawStand() call above, so the sprite
-     loop below only draws the two kinds it actually knows how to paint. */
+     also carries the Stand (Phase 4) and every crowd enemy (Phase 5)
+     purely so the camera/depth-sort see them -- the Stand has its own
+     dedicated drawStand() call above, so the sprite loop below only draws
+     the two kinds it actually knows how to paint. */
   const drawP = () => drawFighter(g, player, ppose, camX, tsec, true, 0, rim);
-  const drawE = () => epose && drawFighter(g, enemy, epose, camX, tsec, false, enemy.phaseIndex, rim);
   depthSort(combat.entities).forEach(f => {
-    if (f.kind === 'player') drawP();
-    else if (f.kind === 'enemy') drawE();
+    if (f.kind === 'player') { drawP(); return; }
+    if (f.kind !== 'enemy') return;
+    const epose = enemyPoses.get(f);
+    if (epose) drawFighter(g, f, epose, camX, tsec, false, f.phaseIndex, rim);
   });
-  drawBarrage(g, player, enemy, ppose, camX);
+  drawBarrage(g, player, nearestEnemyTo(combat.entities, player.x) || combat.enemy, ppose, camX);
 
-  projectiles(g, enemy, camX, tsec);
+  projectiles(g, combat.enemies, camX, tsec);
   particles(g, juice, camX);
   fx.draw(g, W, H);
   drawForeground(g, W, H, scene, camX, tsec, GROUND_Y);

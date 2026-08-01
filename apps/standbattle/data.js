@@ -34,17 +34,72 @@ export { MOVES } from './moves.js';
    ai.js — per §9, boss variety comes from recombining these, not bespoke
    code per enemy. `poise` (GDD §3.9) is the hit count of poise damage the
    enemy can absorb before staggering -- resolved once by poise.js, never
-   read as a raw number anywhere else. */
+   read as a raw number anywhere else.
+
+   Phase 5 crowd fields (GDD §4.1/§4.4/§16), all optional/data-only so a
+   fifth enemy type is a data entry, never an engine change:
+   `profile`     -- token.js's weighting verb (profiles.js), default 'aggressor'
+   `cost`        -- encounter_budget.js's generator budget unit
+   `ranged`/`role`/`clashable` -- encounter_budget.js's composition rules
+   `tokenPool`   -- 'melee' (default) or 'ranged' (token.js's separate pool)
+   `shortName`   -- hud.js's crowd mini health-bar label
+   `tint`        -- fighter.js's existing tint mechanism (already used by
+                    MODIFIERS.aggressive below), reused here so each crowd
+                    type reads as visually distinct at a glance without any
+                    new sprite art (render.js's drawFighter already applies
+                    whatever tint an entity carries) */
 export const ENEMIES = {
   morioh_thug: {
-    id: 'morioh_thug', name: 'MORIOH DELINQUENT', baseType: 'melee',
+    id: 'morioh_thug', name: 'MORIOH DELINQUENT', shortName: 'DELINQUENT', baseType: 'melee',
     hp: 40, power: 5, speedPx: 122, precision: 3, poise: 24,
-    attackPatterns: ['sweep', 'telegraphed_slam']
+    attackPatterns: ['sweep', 'telegraphed_slam'],
+    profile: 'aggressor', cost: 2, clashable: true
   },
   angelo: {
     id: 'angelo', name: 'ANGELO', baseType: 'elite',
     hp: 78, power: 7, speedPx: 165, precision: 6, poise: 50,
     attackPatterns: ['sweep', 'projectile', 'telegraphed_slam']
+  },
+  /* Knife Thug (GDD §4.2 #2): fast, low HP, punishes greed -- opportunist
+     profile means it holds its token back until the player is caught in a
+     recovery/hitstun/stagger window (profiles.js), then commits its one
+     quick pattern. */
+  knife_thug: {
+    id: 'knife_thug', name: 'KNIFE THUG', shortName: 'KNIFE THUG', baseType: 'melee',
+    hp: 22, power: 4, speedPx: 168, precision: 4, poise: 14,
+    attackPatterns: ['quick_stab'],
+    profile: 'opportunist', cost: 1, clashable: true, tint: PAL.lcyan
+  },
+  /* Brute (GDD §4.2 #3): high poise, armored slam, must be respected --
+     turtle profile means it rarely volunteers for a token and, once it
+     has one, throws out its single heavy, armored, telegraphed pattern. */
+  brute: {
+    id: 'brute', name: 'BRUTE', shortName: 'BRUTE', baseType: 'melee',
+    hp: 95, power: 8, speedPx: 96, precision: 5, poise: 60,
+    attackPatterns: ['telegraphed_slam'],
+    profile: 'turtle', cost: 4, clashable: true, tint: PAL.brown
+  }
+};
+
+/* Encounters (tech §3 schema, GDD §4.4) -- waves/spawn/win-condition data,
+   consumed by encounter.js. `winCondition: 'killAll'` is the one
+   implementation Phase 5 ships (see encounter.js); Rule Fights and GDD §15
+   encounter objectives are future values of this same field, never a new
+   field. A wave's enemy list is either a literal `types` array (ids or,
+   for legacy solo boss/elite fights, a raw def object) or a `generate`
+   budget/pool consumed by encounter_budget.js's composition generator at
+   spawn time (the run's seed, not data, decides the actual pick). */
+export const ENCOUNTERS = {
+  morioh_shopping_street: {
+    id: 'morioh_shopping_street', label: 'SHOPPING STREET SCUFFLE', winCondition: 'killAll',
+    waves: [
+      { generate: { budget: 5, pool: ['morioh_thug', 'knife_thug'] } },
+      { types: ['brute'] }
+    ]
+  },
+  budogaoka_park_elite: {
+    id: 'budogaoka_park_elite', label: 'ANGELO', winCondition: 'killAll',
+    waves: [{ types: ['angelo', 'morioh_thug'] }]
   }
 };
 
@@ -110,9 +165,9 @@ export const ACT1_MORIOH = {
   nodes: [
     { id: 'n1', type: 'combat', enemy: 'morioh_thug', label: 'BACK ALLEY' },
     { id: 'n2', type: 'event', event: 'stray_cat', label: 'A QUIET STREET' },
-    { id: 'n3', type: 'combat', enemy: 'morioh_thug', modifier: 'aggressive', label: 'SHOPPING STREET' },
+    { id: 'n3', type: 'combat', encounter: 'morioh_shopping_street', label: 'SHOPPING STREET' },
     { id: 'n4', type: 'rest', label: 'CAFE DEUX MAGOTS' },
-    { id: 'n5', type: 'elite', enemy: 'angelo', label: 'BUDOGAOKA PARK' },
+    { id: 'n5', type: 'elite', encounter: 'budogaoka_park_elite', label: 'BUDOGAOKA PARK' },
     { id: 'n6', type: 'boss', boss: 'killer_queen', label: 'KAMEYU DEPARTMENT STORE' }
   ]
 };
