@@ -1,10 +1,13 @@
 /* Stand Battle Arena — app entry. Ties data/combat/render/map together
    behind the TempleOS app contract (mount/unmount, ctx-only I/O). */
 
-import { ACT1_MORIOH, ENEMIES, ENCOUNTERS, BOSS_KILLER_QUEEN, MODIFIERS, RUN_BUFFS, EVENTS, PAL } from './data.js';
+import { ACT1_MORIOH, ENEMIES, ENCOUNTERS, BOSS_KILLER_QUEEN, MODIFIERS, EVENTS, STANDS, PAL } from './data.js';
 import { createCombat } from './combat.js';
 import { drawCombat } from './render.js';
 import { drawMap, pickNode, drawEvent, pickChoice, drawRest, pickRestContinue } from './map.js';
+import { drawReward, pickRewardChoice } from './rewards.js';
+import { createRunFragmentState, generateOffer, applyOffer, ownedFragmentEntries } from './fragment_offers.js';
+import { createStatPipeline, resolveUpgradeSlotCount } from './stats.js';
 import { drawTitle, drawComplete } from './scenes.js';
 import { wireCombatAudio, sfxVictory, sfxDefeat, sfxActComplete } from './audio.js';
 import { musicStart, musicSetIntensity, musicStop } from './music.js';
@@ -27,15 +30,26 @@ export default {
     const meta = await saveStore.loadMeta();
     const savedRun = await saveStore.loadRun();
 
-    const state = { scene: 'title', runState: null, runRng: null, combat: null, currentEvent: null };
+    const state = { scene: 'title', runState: null, runRng: null, combat: null, currentEvent: null, currentOffer: null };
     let shakeEnabled = meta.shakeEnabled !== false;
     const cleared = !!meta.cleared;
     const input = createInputSystem(meta.keymap);
+
+    /* Developmental Potential (spec §2.1) -> how many Fragment level-ups
+       (beyond each one's free first copy) the whole run's build can spend
+       -- stats.js's resolveUpgradeSlotCount, reserved since Phase 3,
+       consumed for real starting Phase 7. Only one Stand exists today, so
+       this is always Star Platinum's own devPotential (3), computed
+       through the real resolver rather than a duplicated literal. */
+    function defaultUpgradePoints() {
+      return resolveUpgradeSlotCount({ stand: STANDS.star_platinum }, createStatPipeline());
+    }
 
     if (savedRun && savedRun.nodeIndex < ACT1_MORIOH.nodes.length) {
       /* Resuming mid-run loses at most the node in progress -- combat
          state itself is never persisted, only the map-scene checkpoint. */
       state.runState = savedRun;
+      if (state.runState.upgradePoints == null) state.runState.upgradePoints = defaultUpgradePoints(); // save.js's v1->v2 migration sentinel
       state.runRng = createRng(savedRun.seed);
       state.scene = 'map';
     }
@@ -108,7 +122,9 @@ export default {
     function newRun() {
       const seed = Date.now() + '-' + Math.floor(Math.random() * 1e9);
       state.runRng = createRng(seed);
-      state.runState = { seed, hp: 100, maxHp: 100, nodeIndex: 0, buffs: [] };
+      const fragState = createRunFragmentState();
+      fragState.upgradePoints = defaultUpgradePoints();
+      state.runState = { seed, hp: 100, maxHp: 100, nodeIndex: 0, ...fragState };
       state.scene = 'map';
       persistRun();
     }
@@ -125,7 +141,10 @@ export default {
           opts.speedMult = m.speedMult; opts.hpMult = m.hpMult; opts.tint = m.tint;
         }
       }
-      const combat = createCombat(target, state.runState.buffs, opts, state.runRng);
+      const owned = ownedFragmentEntries(state.runState)
+        .filter(e => e.owned)
+        .map(e => ({ id: e.owned.id, level: e.owned.level }));
+      const combat = createCombat(target, owned, opts, state.runRng);
       combat.player.hp = state.runState.hp;
       combat.player.maxHp = state.runState.maxHp;
       combat.debug = debugEnabled;
@@ -140,6 +159,16 @@ export default {
       if (node.type === 'event') { state.currentEvent = EVENTS[node.event]; state.scene = 'event'; }
       else if (node.type === 'rest') { state.scene = 'rest'; }
       else startCombatForNode(node);
+    }
+
+    /* GDD §6.1 deliverable 2's offer flow: 3 choices, each pre-assigned to
+       a slot. Fires after clearing any combat/elite/boss node and from
+       the stray-cat event's 'fragment' choice -- both routes converge
+       here so there is exactly one offer/pick code path. */
+    function enterReward() {
+      state.currentOffer = generateOffer(state.runRng.stream('rewards'), state.runState);
+      state.scene = 'reward';
+      persistRun();
     }
 
     function advanceNode() {
@@ -158,9 +187,9 @@ export default {
 
     function applyEventChoice(idx) {
       const choice = state.currentEvent.choices[idx];
-      if (choice.kind === 'heal') state.runState.hp = Math.min(state.runState.maxHp, state.runState.hp + choice.amount);
-      else if (choice.kind === 'buff') state.runState.buffs.push(state.runRng.stream('rewards').pick(RUN_BUFFS));
       if (window.Snd) window.Snd.chirp();
+      if (choice.kind === 'fragment') { enterReward(); return; }
+      state.runState.hp = Math.min(state.runState.maxHp, state.runState.hp + choice.amount);
       advanceNode();
     }
 
@@ -189,10 +218,18 @@ export default {
       } else if (state.scene === 'combat' && state.combat.outcome !== 'fighting') {
         if (state.combat.outcome === 'win') {
           state.runState.hp = state.combat.player.hp;
-          advanceNode();
+          enterReward();
         } else {
           saveStore.clearRun();
           state.scene = 'title';
+        }
+      } else if (state.scene === 'reward') {
+        const idx = pickRewardChoice(mx, my, state.currentOffer, W);
+        if (idx >= 0) {
+          applyOffer(state.runState, state.currentOffer[idx]);
+          state.currentOffer = null;
+          if (window.Snd) window.Snd.select();
+          advanceNode();
         }
       } else if (state.scene === 'complete') {
         state.scene = 'title';
@@ -232,6 +269,7 @@ export default {
         drawCombat(g, W, H, c, tsec, dt, ACT1_MORIOH.nodes[state.runState.nodeIndex].id);
       }
       else if (state.scene === 'map') drawMap(g, W, H, ACT1_MORIOH.nodes, state.runState, tsec);
+      else if (state.scene === 'reward') drawReward(g, W, H, state.currentOffer, state.runState, tsec);
       else if (state.scene === 'event') drawEvent(g, W, H, state.currentEvent, tsec);
       else if (state.scene === 'rest') drawRest(g, W, H, state.runState, tsec);
       else if (state.scene === 'title') drawTitle(g, W, H, tsec, cleared);

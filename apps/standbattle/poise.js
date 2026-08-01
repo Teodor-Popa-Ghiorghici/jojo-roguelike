@@ -19,9 +19,16 @@ export function initPoise(entity, def) {
   entity.poise.max = max;
   entity.poiseRegenTimer = 0;
   entity.poiseBroken = false;
+  entity.armorStripped = false; // Phase 7 (GDD §6.1 Sticky Fingers example) -- generic, permanent-for-the-encounter override
 }
 
-function isArmoredNow(ai) {
+/* `enemy.armorStripped` (Phase 7): a Fragment that "removes an enemy's
+   armor entirely for the encounter" (GDD §6.1's own Sticky Fingers —
+   Medium example) sets this once; it is never cleared, matching the
+   quoted design exactly. Generic on any enemy, not content-specific --
+   the flag lives in fighter.js's stub set, this is just its one reader. */
+function isArmoredNow(ai, enemy) {
+  if (enemy && enemy.armorStripped) return false;
   return ai.state === 'windup' && ai.pattern && ai.pattern.armor;
 }
 
@@ -49,7 +56,7 @@ export function stepPoise(enemy) {
     if (enemy.poiseRegenTimer <= 0 && !enemy.poiseBroken) enemy.poise.current = enemy.poise.max;
   }
   if (enemy.poiseBroken && enemy.ai.state !== 'staggered') {
-    if (isArmoredNow(enemy.ai)) return false; // firm, not unfair -- always paired with the mandatory telegraph
+    if (isArmoredNow(enemy.ai, enemy)) return false; // firm, not unfair -- always paired with the mandatory telegraph
     if (!enemyIsVulnerableToStagger(enemy.ai)) return false;
     enterStagger(enemy.ai, STAGGER_FRAMES, STAGGER_DAMAGE_MULT);
     enemy.poiseBroken = false;

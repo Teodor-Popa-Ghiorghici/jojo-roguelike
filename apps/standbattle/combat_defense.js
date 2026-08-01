@@ -67,7 +67,7 @@ export function resolveIncomingAttack(combat, pattern, atX, target, attacker) {
        Clash fires the former; a Perfect Clash additionally fires the
        latter. This is the hook the "Perfect Clash refunds 25 Persistence"
        test Fragment targeted (Phase 3 report). */
-    const clashCtx = { entity: player, opponent: attacker, cancelled: false };
+    const clashCtx = { entity: player, opponent: attacker, combat, cancelled: false };
     dispatcher.runEffect('onClashSuccess', clashCtx);
     if (perfect) dispatcher.runEffect('onPerfectClash', clashCtx);
     dispatcher.runEffect('onStaggerStart', { entity: attacker, cause: 'clash', frames: defense.CLASH_STAGGER_FRAMES, mult: 1, cancelled: false });

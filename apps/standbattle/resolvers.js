@@ -25,6 +25,7 @@ import { MOVES } from './moves.js';
 import { PATTERNS } from './ai.js';
 import { applyDamage } from './fighter.js';
 import { resolveSpeedScalar, resolveCritChance, resolveTetherPx, resolveFeedbackPct } from './stats.js';
+import { hasStatus, STATUS_DEFS } from './status.js';
 
 /* GDD §3.2: "−20% damage penalty while over-extended." Read directly off
    `ctx.attacker.strained` (combat_stand.js sets this once per frame, same
@@ -114,7 +115,7 @@ export function rollCrit(ctx) {
 
 /* Final damage for one landed hitbox hit. `ctx`:
    { attacker, defender, hitbox|pattern, isPlayerAttacker, critMult,
-     guardMult, partMult?, move?, bus? }
+     guardMult, partMult?, move?, bus?, combat? }
    When `ctx.bus` is provided this is the single call site for both
    onHitResolve (mutable: a Fragment may multiply ctx.damage, queue
    ctx.statuses for the caller to apply on a landed hit, or cancel the hit
@@ -134,6 +135,13 @@ export function resolveDamage(ctx) {
   if (ctx.defender.ai && ctx.defender.ai.state === 'staggered') dmg *= ctx.defender.ai.staggerMult || 1;
   if (ctx.guardMult != null) dmg *= ctx.guardMult; // Guard's -70% / chip conversion (defense.js)
   if (ctx.partMult) dmg *= ctx.partMult; // GDD §4.6 Phase 3 -- the exposed User's x3 multiplier (boss_parts.js)
+  /* GDD §3.10's Frozen status carried a real `damageTakenMult` since Phase
+     3 with no consumer ("data is real, no consumer yet, reserved" --
+     status.js). Phase 7's The World — Heavy is the first content to ever
+     apply Frozen; this generic, unconditional read is the actual
+     consumer, wired once here (invariant 5) rather than as a per-Fragment
+     special case, so any future Frozen source gets the payoff for free. */
+  if (ctx.defender && hasStatus(ctx.defender, 'frozen')) dmg *= STATUS_DEFS.frozen.damageTakenMult;
 
   if (ctx.bus) {
     const tags = (ctx.hitbox && ctx.hitbox.tags) || (ctx.pattern && ctx.pattern.tags) || [];
@@ -141,7 +149,7 @@ export function resolveDamage(ctx) {
     const hookCtx = {
       attacker: ctx.attacker, defender: ctx.defender, move: ctx.move || null,
       hitbox: ctx.hitbox || null, pattern: ctx.pattern || null, isPlayerAttacker: ctx.isPlayerAttacker,
-      damage: dmg, tags, slot: ctx.move ? ctx.move.slot : null, chainCount,
+      damage: dmg, tags, slot: ctx.move ? ctx.move.slot : null, chainCount, combat: ctx.combat || null,
       crit: !!(ctx.critMult && ctx.critMult > 1), statuses: [], cancelled: false
     };
     ctx.bus.runEffect('onHitResolve', hookCtx);
