@@ -30,6 +30,7 @@ import { stepStand } from './combat_stand.js';
 import { stepCrowd } from './combat_crowd.js';
 import { createEncounter, normalizeEncounter, stepEncounter } from './encounter.js';
 import { createTokenSystem } from './token.js';
+import { stepHazards } from './hazards.js';
 import { ARENA_MIN, FRAME_MS } from './constants.js';
 
 const INPUT_BUFFER_FRAMES = 9; // 150ms -- matches tech §3.6's "9-frame buffer" exactly
@@ -79,6 +80,7 @@ export function createCombat(enemyOrEncounterDef, runBuffs, opts, rng) {
   const combat = {
     player, stand, enemies: [], entities: [player, stand], juice, dispatcher, stats, keys, combatRng, encounterRng,
     tokenSystem: createTokenSystem(TOKEN_MELEE_COUNT, TOKEN_RANGED_COUNT),
+    hazards: [], // GDD §4.6 Phase 2's "rule" (hazards.js) -- empty for every fight that never spawns one
     spawnOpts: { hpMult: opts.hpMult, speedMult: opts.speedMult, tint: opts.tint },
     outcome: 'fighting', banner: '', bannerTimer: 84, // 1400ms
     log: [], pushLog: push, debug: false
@@ -117,6 +119,7 @@ export function createCombat(enemyOrEncounterDef, runBuffs, opts, rng) {
     stepStand(combat); // before updatePlayer so player.projecting/.strained are fresh this frame (GDD §3.2/§3.4)
     updatePlayer(combat);
     stepCrowd(combat, aiRng); // tokens (GDD §16) -> every enemy's AI/attack -> wave-spawn/win-condition (encounter.js)
+    stepHazards(combat); // GDD §4.6 Phase 2's "rule" -- a no-op sweep over an empty list for every other fight
     combat.entities.forEach(stepStatuses); // GDD §3.10 / tech §2.6 -- statuses are data, the engine only ticks them
     if (player.hp <= 0 && combat.outcome === 'fighting') combat.outcome = 'lose';
   }

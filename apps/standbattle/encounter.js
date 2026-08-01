@@ -14,6 +14,8 @@ import { ENEMIES } from './data.js';
 import { createEnemyFighter } from './fighter.js';
 import { createEnemyAI } from './ai.js';
 import { initPoise } from './poise.js';
+import { initParts } from './boss_parts.js';
+import { initPurge } from './purge.js';
 import { generateEncounterBudget } from './encounter_budget.js';
 import { ARENA_MAX, Z_REST } from './constants.js';
 
@@ -63,6 +65,8 @@ function spawnWave(combat, waveDef, waveIndex, opts, rng) {
     enemy.ai = createEnemyAI(def.phases ? def.phases[0].attackPatterns : def.attackPatterns);
     enemy.brain = enemy.ai;
     initPoise(enemy, def);
+    initParts(enemy, def); // Phase 6 -- a no-op array for every def without a `parts` field
+    initPurge(enemy); // Phase 6 -- a no-op until `purgeAtHpFrac` is set
     combat.enemies.push(enemy);
     combat.entities.push(enemy);
   });

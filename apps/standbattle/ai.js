@@ -60,7 +60,13 @@ export const PATTERNS = {
     id: 'sheer_heart_attack', label: 'SHEER HEART ATTACK', windupFrames: 42, activeFrames: 72, recoverFrames: 31, // 700/1200/520ms
     range: 460, dmgMult: 1.7, knockback: 25, hitstopMs: 90, telegraph: '#FF55FF', glyph: 'crosshair',
     armor: true, tags: ['ranged', 'heavy'],
-    projectileSpeed: 360, ranged: true, homing: true
+    projectileSpeed: 360, ranged: true, homing: true,
+    /* Phase 6 deliverable 2's "adds a rule": a pursuit that runs out its
+       clock without connecting still detonates in place, leaving a
+       lingering blast zone (hazards.js) -- generic data any future boss's
+       own projectile pattern can opt into via this one field, not a
+       second bespoke move. */
+    hazard: { radius: 40, tickFrames: 20, dmg: 4, lifeFrames: 150 }
   }
 };
 

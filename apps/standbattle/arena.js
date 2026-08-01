@@ -152,6 +152,47 @@ function telegraphOne(g, enemy, camX, tsec) {
   }
 }
 
+/* GDD §4.6 Phase 3's target indicator (deliverable 5): a pulsing reticle
+   plus label at a revealed part's own world position -- reads combat
+   state, writes nothing, same rule as telegraph()/projectiles() above.
+   The world-space half of the cue; hud.js's drawSoloEnemyPanel carries
+   the HUD-panel half. */
+export function exposedParts(g, enemies, camX, tsec) {
+  enemies.forEach(enemy => {
+    if (enemy.hp <= 0) return;
+    enemy.parts.forEach(part => {
+      if (!part.revealed) return;
+      const x = part.x - camX;
+      const y = GROUND_Y + zToYOffset(part.z) - 34;
+      const pulse = 0.5 + 0.5 * Math.sin(tsec * 10);
+      g.save();
+      g.globalAlpha = 0.6 + pulse * 0.4;
+      ring(g, x, y, 10 + pulse * 3, 2, '#FFE86A', 0.9);
+      [[-14, -6], [6, 14]].forEach(([a, b]) => line(g, x + a, y, x + b, y, 1, '#FFE86A'));
+      [[-14, -6], [6, 14]].forEach(([a, b]) => line(g, x, y + a, x, y + b, 1, '#FFE86A'));
+      g.restore();
+      text(g, part.label || 'WEAK POINT', x, y - 22, { scale: 1, align: 'center', color: '#FFE86A', outline: '#3A2A06' });
+    });
+  });
+}
+
+/* GDD §4.6 Phase 2's "rule": a lingering hazard zone (hazards.js) --
+   pulsing ground ellipse in the same style telegraph() already uses so a
+   hazard reads as "part of the same visual language", not a new effect
+   type bolted on. */
+export function hazardZones(g, hazards, camX, tsec) {
+  hazards.forEach(h => {
+    const x = h.x - camX, gy = GROUND_Y + zToYOffset(h.z);
+    const pulse = 0.4 + 0.35 * Math.abs(Math.sin(tsec * 10 + h.x));
+    g.save();
+    g.globalAlpha = pulse;
+    ellipse(g, x, gy + 2, h.radius * 0.7, h.radius * 0.22 + 3, '#FF55FF');
+    g.globalAlpha = pulse * 0.7;
+    ring(g, x, gy + 2, h.radius * 0.7, 2, '#FFB0FF', 0.3);
+    g.restore();
+  });
+}
+
 export function projectiles(g, enemies, camX, tsec) {
   enemies.forEach(enemy => projectilesOne(g, enemy, camX, tsec));
 }

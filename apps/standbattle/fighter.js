@@ -34,6 +34,8 @@ export function attachComponentStubs(entity) {
   entity.standLink = null; // real since Phase 4 (createPlayerFighter/createStandFighter link the two)
   entity.frames = null; // unused until the frame-data timeline exists
   entity.aggro = 1; // real since Phase 4 -- combat_stand.js's target picker weights by this
+  entity.statusImmuneFrames = 0; // real since Phase 6 -- status.js's applyStatus/stepStatuses; purge.js is the first consumer
+  entity.parts = []; // real since Phase 6 -- boss_parts.js; empty for every entity that never opts in
   return entity;
 }
 

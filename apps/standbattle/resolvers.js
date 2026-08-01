@@ -114,7 +114,7 @@ export function rollCrit(ctx) {
 
 /* Final damage for one landed hitbox hit. `ctx`:
    { attacker, defender, hitbox|pattern, isPlayerAttacker, critMult,
-     guardMult, move?, bus? }
+     guardMult, partMult?, move?, bus? }
    When `ctx.bus` is provided this is the single call site for both
    onHitResolve (mutable: a Fragment may multiply ctx.damage, queue
    ctx.statuses for the caller to apply on a landed hit, or cancel the hit
@@ -133,6 +133,7 @@ export function resolveDamage(ctx) {
   if (ctx.defender.breakActive) dmg *= 1.8; // Perfect Clash's Break (GDD §3.7), consumed by applyHit
   if (ctx.defender.ai && ctx.defender.ai.state === 'staggered') dmg *= ctx.defender.ai.staggerMult || 1;
   if (ctx.guardMult != null) dmg *= ctx.guardMult; // Guard's -70% / chip conversion (defense.js)
+  if (ctx.partMult) dmg *= ctx.partMult; // GDD §4.6 Phase 3 -- the exposed User's x3 multiplier (boss_parts.js)
 
   if (ctx.bus) {
     const tags = (ctx.hitbox && ctx.hitbox.tags) || (ctx.pattern && ctx.pattern.tags) || [];

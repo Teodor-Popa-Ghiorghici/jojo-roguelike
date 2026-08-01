@@ -13,6 +13,9 @@ import { stepEnemyAI, defaultApproachRange } from './ai.js';
 import { pickAttackTarget, pickAttackTargetPoint } from './combat_stand.js';
 import { stepPoise, STAGGER_FRAMES, STAGGER_DAMAGE_MULT } from './poise.js';
 import { resolveIncomingAttack } from './combat_defense.js';
+import { revealPartsForPhase, stepParts } from './boss_parts.js';
+import { stepPurge } from './purge.js';
+import { spawnHazard } from './hazards.js';
 import { ARENA_MIN, ARENA_MAX, SIM_HZ } from './constants.js';
 
 const PHASE_INVULN_FRAMES = 30; // 500ms
@@ -30,11 +33,13 @@ export function updateEnemyPhase(combat, enemy) {
     enemy.ai.patternIds = phases[next].attackPatterns;
     enemy.ai.approachRange = defaultApproachRange(phases[next].attackPatterns);
     enemy.invulnFrames = PHASE_INVULN_FRAMES;
-    combat.banner = enemy.def.transitionLine || 'PHASE 2';
+    // each phase entry owns its own line (Phase 6) -- 'PHASE N' is the fallback for content that doesn't bother
+    combat.banner = phases[next].transitionLine || ('PHASE ' + (next + 1));
     combat.bannerTimer = PHASE_BANNER_FRAMES;
     combat.juice.triggerHitstop(160);
     combat.juice.triggerShake(0, -1, 8, 260);
     combat.dispatcher.fire('onPhaseTransition', {});
+    revealPartsForPhase(combat, enemy, next); // GDD §4.6 Phase 3 -- a no-op unless this phase exposes a part
   }
 }
 
@@ -57,6 +62,8 @@ export function stepEnemyMovementAndAI(combat, enemy, aiRng) {
   if (enemy.knockVx) { enemy.x += enemy.knockVx; enemy.knockVx *= 0.82; if (Math.abs(enemy.knockVx) < 0.3) enemy.knockVx = 0; }
   enemy.x = Math.max(ARENA_MIN, Math.min(ARENA_MAX, enemy.x));
   enemy.facing = player.x >= enemy.x ? 1 : -1;
+  stepParts(enemy); // GDD §4.6 Phase 3 -- keeps a revealed part glued to its owner every frame
+  stepPurge(combat, enemy); // GDD §18B -- the one-shot trigger check plus the Defend Mode tint sync
   /* GDD §3.9: regen-after-no-hit and pending poise-break -> Stagger.
      stepPoise() returns true only the frame it actually enters Stagger, so
      onStaggerStart (tech §2.1, mutable) fires exactly once per break. */
@@ -102,6 +109,12 @@ export function stepEnemyMovementAndAI(combat, enemy, aiRng) {
       enemy.projectiles.splice(i, 1);
       continue;
     }
-    if (pr.life <= 0 || pr.x < ARENA_MIN - 20 || pr.x > ARENA_MAX + 20) enemy.projectiles.splice(i, 1);
+    if (pr.life <= 0) {
+      // Phase 6 deliverable 2's "rule": a pursuit that times out without connecting still detonates
+      if (pr.pattern.hazard) spawnHazard(combat, pr.x, pr.z, pr.pattern.hazard);
+      enemy.projectiles.splice(i, 1);
+    } else if (pr.x < ARENA_MIN - 20 || pr.x > ARENA_MAX + 20) {
+      enemy.projectiles.splice(i, 1);
+    }
   }
 }
