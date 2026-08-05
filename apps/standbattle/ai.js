@@ -56,6 +56,38 @@ export const PATTERNS = {
     armor: false, tags: ['melee', 'light'],
     hitbox: { x: 30, z: 0, w: 58, tags: ['melee', 'light'] }
   },
+  /* Phase 9b additions -- three new pattern *shapes*, not three new
+     mechanisms: `shield_advance`/`zone_denial`/`bomb_plant` are plain
+     PATTERNS entries like every other move, differing only in their
+     authored numbers plus `zone_denial`/`bomb_plant` opting into the
+     existing generic `hazard` field (hazards.js) that sheer_heart_attack
+     already proved out for a non-boss pattern. */
+  shield_advance: {
+    id: 'shield_advance', label: 'SHIELD ADVANCE', windupFrames: 30, activeFrames: 10, recoverFrames: 24, // 500/167/400ms
+    range: 70, dmgMult: 1.1, knockback: 22, hitstopMs: 70, telegraph: '#5555FF', glyph: 'chevron',
+    armor: true, tags: ['melee', 'heavy'],
+    hitbox: { x: 35, z: 0, w: 70, tags: ['melee', 'heavy'] }
+  },
+  sniper_shot: {
+    id: 'sniper_shot', label: 'SNIPER SHOT', windupFrames: 46, activeFrames: 40, recoverFrames: 24, // 767/667/400ms
+    range: 420, dmgMult: 1.3, knockback: 14, hitstopMs: 60, telegraph: '#55FFFF', glyph: 'crosshair',
+    armor: false, tags: ['ranged'],
+    projectileSpeed: 520, ranged: true
+  },
+  zone_denial: {
+    id: 'zone_denial', label: 'ZONE DENIAL', windupFrames: 34, activeFrames: 46, recoverFrames: 30, // 567/767/500ms
+    range: 360, dmgMult: 0.6, knockback: 6, hitstopMs: 40, telegraph: '#AA00AA', glyph: 'crosshair',
+    armor: false, tags: ['ranged'],
+    projectileSpeed: 260, ranged: true,
+    hazard: { radius: 46, tickFrames: 24, dmg: 4, lifeFrames: 210 }
+  },
+  bomb_plant: {
+    id: 'bomb_plant', label: 'BOMB PLANT', windupFrames: 30, activeFrames: 30, recoverFrames: 26, // 500/500/433ms
+    range: 90, dmgMult: 0.3, knockback: 4, hitstopMs: 30, telegraph: '#FF55FF', glyph: 'ring',
+    armor: false, tags: ['ranged'],
+    projectileSpeed: 40, ranged: true, // plants close to itself rather than truly "firing"
+    hazard: { radius: 55, tickFrames: 18, dmg: 6, lifeFrames: 120 }
+  },
   sheer_heart_attack: {
     id: 'sheer_heart_attack', label: 'SHEER HEART ATTACK', windupFrames: 42, activeFrames: 72, recoverFrames: 31, // 700/1200/520ms
     range: 460, dmgMult: 1.7, knockback: 25, hitstopMs: 90, telegraph: '#FF55FF', glyph: 'crosshair',

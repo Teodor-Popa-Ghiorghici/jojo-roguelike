@@ -2,12 +2,8 @@
    Everything here is a plain data object per docs/stand-battle-arena-spec.md
    §14.2: new content is a data entry, not a new code path. */
 
-export const PAL = {
-  black: '#000000', blue: '#0000AA', green: '#00AA00', cyan: '#00AAAA',
-  red: '#AA0000', magenta: '#AA00AA', brown: '#AA5500', gray: '#AAAAAA',
-  dgray: '#555555', lblue: '#5555FF', lgreen: '#55FF55', lcyan: '#55FFFF',
-  lred: '#FF5555', lmagenta: '#FF55FF', yellow: '#FFFF55', white: '#FFFFFF'
-};
+export { PAL } from './cga_palette.js';
+import { PAL } from './cga_palette.js';
 
 /* Stand definition — stats per §2.1 (Power/Speed/Range/Persistence/
    Precision/Developmental Potential). Range and Power lean inversely,
@@ -31,83 +27,11 @@ export const STANDS = {
    call sites keep working without churn. */
 export { MOVES } from './moves.js';
 
-/* Enemy definitions. attackPatterns reference the shared module library in
-   ai.js — per §9, boss variety comes from recombining these, not bespoke
-   code per enemy. `poise` (GDD §3.9) is the hit count of poise damage the
-   enemy can absorb before staggering -- resolved once by poise.js, never
-   read as a raw number anywhere else.
-
-   Phase 5 crowd fields (GDD §4.1/§4.4/§16), all optional/data-only so a
-   fifth enemy type is a data entry, never an engine change:
-   `profile`     -- token.js's weighting verb (profiles.js), default 'aggressor'
-   `cost`        -- encounter_budget.js's generator budget unit
-   `ranged`/`role`/`clashable` -- encounter_budget.js's composition rules
-   `tokenPool`   -- 'melee' (default) or 'ranged' (token.js's separate pool)
-   `shortName`   -- hud.js's crowd mini health-bar label
-   `tint`        -- fighter.js's existing tint mechanism (already used by
-                    MODIFIERS.aggressive below), reused here so each crowd
-                    type reads as visually distinct at a glance without any
-                    new sprite art (render.js's drawFighter already applies
-                    whatever tint an entity carries) */
-export const ENEMIES = {
-  morioh_thug: {
-    id: 'morioh_thug', name: 'MORIOH DELINQUENT', shortName: 'DELINQUENT', baseType: 'melee',
-    hp: 40, power: 5, speedPx: 122, precision: 3, poise: 24,
-    attackPatterns: ['sweep', 'telegraphed_slam'],
-    profile: 'aggressor', cost: 2, clashable: true
-  },
-  angelo: {
-    id: 'angelo', name: 'ANGELO', baseType: 'elite',
-    hp: 78, power: 7, speedPx: 165, precision: 6, poise: 50,
-    attackPatterns: ['sweep', 'projectile', 'telegraphed_slam']
-  },
-  /* Knife Thug (GDD §4.2 #2): fast, low HP, punishes greed -- opportunist
-     profile means it holds its token back until the player is caught in a
-     recovery/hitstun/stagger window (profiles.js), then commits its one
-     quick pattern. */
-  knife_thug: {
-    id: 'knife_thug', name: 'KNIFE THUG', shortName: 'KNIFE THUG', baseType: 'melee',
-    hp: 22, power: 4, speedPx: 168, precision: 4, poise: 14,
-    attackPatterns: ['quick_stab'],
-    profile: 'opportunist', cost: 1, clashable: true, tint: PAL.lcyan
-  },
-  /* Brute (GDD §4.2 #3): high poise, armored slam, must be respected --
-     turtle profile means it rarely volunteers for a token and, once it
-     has one, throws out its single heavy, armored, telegraphed pattern. */
-  brute: {
-    id: 'brute', name: 'BRUTE', shortName: 'BRUTE', baseType: 'melee',
-    hp: 95, power: 8, speedPx: 96, precision: 5, poise: 60,
-    attackPatterns: ['telegraphed_slam'],
-    profile: 'turtle', cost: 4, clashable: true, tint: PAL.brown
-  },
-  /* Hound (GDD §4.2 #7, Phase 9a): a Stand-beast flanker -- the designed
-     counterplay to a rooted/exposed User (Close's held Project, Long-
-     Range's permanently separated second body). `ignoresToken` (read by
-     token.js/combat_enemy.js) means it's never gated by the crowd's
-     attack-token pool; `userTargetWeightMult` (combat_stand.js's
-     resolveTarget) heavily -- not absolutely -- biases the aggro-weighted
-     target split toward the User whenever both hurtboxes are hit. */
-  hound: {
-    id: 'hound', name: 'HOUND', shortName: 'HOUND', baseType: 'melee',
-    hp: 30, power: 6, speedPx: 210, precision: 5, poise: 16,
-    attackPatterns: ['quick_stab'],
-    profile: 'aggressor', cost: 2, clashable: true, tint: PAL.lmagenta,
-    ignoresToken: true, userTargetWeightMult: 20
-  },
-  /* Warden (GDD §4.2 #12, Phase 9a): anti-Project -- `detachedStandPunishMult`
-     is read directly by resolvers.js's resolveDamage while its target's
-     Stand is detached (the generic `standDetached` flag every Stand Class
-     sets each frame, stand_classes.js: Close's held Project, Mid's flick,
-     or Long-Range's permanent detachment), the counter to holding Project
-     or kiting behind a detached Stand. */
-  warden: {
-    id: 'warden', name: 'WARDEN', shortName: 'WARDEN', baseType: 'melee',
-    hp: 70, power: 7, speedPx: 110, precision: 5, poise: 46,
-    attackPatterns: ['telegraphed_slam'],
-    profile: 'turtle', cost: 3, clashable: true, tint: PAL.blue,
-    detachedStandPunishMult: 1.7
-  }
-};
+/* Enemy definitions moved to data_enemies.js (Phase 9b, roster now 14
+   types + Puppeteer's summon fodder) -- re-exported here so every existing
+   `import { ENEMIES } from './data.js'` call site is untouched, the same
+   precedent moves.js's MOVES re-export above already set. */
+export { ENEMIES } from './data_enemies.js';
 
 /* Encounters (tech §3 schema, GDD §4.4) -- waves/spawn/win-condition data,
    consumed by encounter.js. `winCondition: 'killAll'` is the one

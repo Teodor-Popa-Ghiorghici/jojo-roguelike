@@ -7,7 +7,13 @@ import { createRng } from './rng.js';
 import { generateEncounterBudget } from './encounter_budget.js';
 import { ENEMIES } from './data.js';
 
-const POOL = ['morioh_thug', 'knife_thug', 'brute'];
+/* Phase 9b: the full 14-type roster (GDD §4.2), not just Phase 5's original
+   three -- a new type is only proven composition-safe once this check
+   actually draws it. */
+const POOL = [
+  'morioh_thug', 'knife_thug', 'brute', 'hound', 'warden',
+  'shielder', 'sniper', 'zoner', 'bomber', 'puppeteer', 'duelist', 'leech', 'phaser', 'caller'
+];
 const TRIALS = 500;
 
 export function runEncounterChecks() {

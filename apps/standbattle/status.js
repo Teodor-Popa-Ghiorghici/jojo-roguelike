@@ -87,6 +87,10 @@ export function applyStatus(entity, statusId, stacks) {
      field/check. Silently a no-op, same shape as any other "this attack
      had no effect" outcome elsewhere in the sim. */
   if (entity.statusImmuneFrames > 0) return;
+  /* Phase 9b Warded: consumes itself on the very first status applied,
+     generic one-shot flag (any future "ward" source reuses it, not just
+     this affix) rather than a fixed-duration window like statusImmuneFrames. */
+  if (entity.affixData && entity.affixData.warded) { entity.affixData.warded = false; return; }
   const amount = stacks == null ? 1 : stacks;
 
   if (def.stackRule === STACK_RULES.INDEPENDENT) {

@@ -16,7 +16,10 @@ import { resolveIncomingAttack } from './combat_defense.js';
 import { revealPartsForPhase, stepParts } from './boss_parts.js';
 import { stepPurge } from './purge.js';
 import { spawnHazard } from './hazards.js';
+import { stepSummon } from './summons.js';
 import { ARENA_MIN, ARENA_MAX, SIM_HZ } from './constants.js';
+
+const LEASH_RANGE = 90; // Phase 9b Leashed -- world units from its own spawn point it will not chase past
 
 const PHASE_INVULN_FRAMES = 30; // 500ms
 const PHASE_BANNER_FRAMES = 108; // 1800ms
@@ -76,8 +79,12 @@ export function stepEnemyMovementAndAI(combat, enemy, aiRng) {
   enemy.moving = false;
   if (enemy.ai.state === 'approach') {
     const dir = player.x > enemy.x ? 1 : -1;
-    if (dist > enemy.ai.approachRange) { enemy.x += dir * enemy.speedPxPerFrame; enemy.moving = true; }
+    // Phase 9b Leashed: never closes distance past its own spawn point, generic on the optional affix flag.
+    const leashed = enemy.affixData && enemy.affixData.leashed &&
+      Math.abs((enemy.x + dir * enemy.speedPxPerFrame) - (enemy.spawnX == null ? enemy.x : enemy.spawnX)) > LEASH_RANGE;
+    if (dist > enemy.ai.approachRange && !leashed) { enemy.x += dir * enemy.speedPxPerFrame; enemy.moving = true; }
   }
+  stepSummon(combat, enemy, aiRng); // Phase 9b Puppeteer/Caller -- a no-op for every def without a `summon` field
   const wasWindup = enemy.ai.state === 'windup';
   // GDD §4.2 Hound (#7): "ignores attack tokens" -- always eligible to commit, never gated by the crowd's pool
   const ev = stepEnemyAI(enemy.ai, dist, aiRng, enemy.hasToken || enemy.def.ignoresToken);

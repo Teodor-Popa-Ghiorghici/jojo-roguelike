@@ -17,6 +17,9 @@ import { initPoise } from './poise.js';
 import { initParts } from './boss_parts.js';
 import { initPurge } from './purge.js';
 import { generateEncounterBudget } from './encounter_budget.js';
+import { rollAffixes, applyAffixesToEnemy } from './affixes.js';
+import { initSummonState } from './summons.js';
+import { installAffix } from './content_registry.js';
 import { ARENA_MAX, Z_REST } from './constants.js';
 
 export const WAVE_TELEGRAPH_FRAMES = 90; // 1.5s, GDD §4.4: "later waves telegraph 1.5s before arriving"
@@ -52,7 +55,21 @@ export function createEncounter(def) {
   return { def, waveIndex: -1, telegraphing: false, telegraphTimer: 0 };
 }
 
+/* Phase 9b: enemy-native abilities (data.js's `explodeOnDeath`/`onHitDrain`
+   fields -- Bomber's corpse explosion, Leech's Persistence drain) install
+   through the exact same installAffix/EFFECT_LIB seam a rolled affix uses,
+   just keyed off the def instead of a roll -- one mechanism, two sources. */
+function installNativeAbilities(dispatcher, def, enemy) {
+  if (def.explodeOnDeath) {
+    installAffix(dispatcher, { id: def.id + ':explode', effects: [{ hook: 'onKill', fn: 'explodeOnDeath', data: def.explodeOnDeath }] }, enemy);
+  }
+  if (def.onHitDrain) {
+    installAffix(dispatcher, { id: def.id + ':drain', effects: [{ hook: 'onDamageTaken', fn: 'drainPersistenceOnHit', data: def.onHitDrain }] }, enemy);
+  }
+}
+
 function spawnWave(combat, waveDef, waveIndex, opts, rng) {
+  const spawned = [];
   resolveWaveTypes(waveDef, rng).forEach((t, i) => {
     const def = resolveEnemyDef(t);
     const pos = spawnPosition(combat.enemies.length);
@@ -62,14 +79,38 @@ function spawnWave(combat, waveDef, waveIndex, opts, rng) {
     const tint = opts.tint || def.tint || null;
     const enemy = createEnemyFighter(def, pos.x, opts.hpMult, opts.speedMult, tint, pos.z);
     enemy.waveIndex = waveIndex;
+    enemy.spawnX = enemy.x; // Phase 9b Leashed's own anchor point
     enemy.ai = createEnemyAI(def.phases ? def.phases[0].attackPatterns : def.attackPatterns);
     enemy.brain = enemy.ai;
     initPoise(enemy, def);
     initParts(enemy, def); // Phase 6 -- a no-op array for every def without a `parts` field
     initPurge(enemy); // Phase 6 -- a no-op until `purgeAtHpFrac` is set
+    initSummonState(enemy, def); // Phase 9b -- a no-op until a `summon` field is set (Puppeteer/Caller)
+    installNativeAbilities(combat.dispatcher, def, enemy);
+    /* GDD §4.3: elites roll 1-2 affixes, Menace ranks add rolls. No real
+       elite-node/Menace propagation from the map/run layer exists yet
+       (encounter_budget.js's own comment: Menace "not implemented yet") --
+       `def.baseType === 'elite'` (the one existing tag, `angelo`) and
+       `opts.isElite`/`opts.menaceRank` are the two ways in until that
+       phase wires a real source through. */
+    const isElite = opts.isElite || def.baseType === 'elite';
+    const affixNames = applyAffixesToEnemy(combat, enemy, rollAffixes(rng, isElite, opts.menaceRank || 0));
     combat.enemies.push(enemy);
     combat.entities.push(enemy);
+    spawned.push({ enemy, affixNames });
   });
+  /* GDD §4.3: "visible before the fight starts" -- reuses the exact banner
+     mechanism wave-arrival/phase-transition text already renders through
+     (hud.js), so no render code changes at all (render.md: additive only).
+     Wave 0's banner is finalized by combat.js right after this returns (it
+     only fills in a default when spawnWave leaves one here); a later
+     wave's own affix banner replaces 'REINFORCEMENTS INCOMING' the instant
+     it actually spawns. */
+  const withAffixes = spawned.filter(s => s.affixNames.length);
+  if (withAffixes.length) {
+    combat.banner = 'AFFIXES -- ' + withAffixes.map(s => `${s.enemy.def.name}: ${s.affixNames.join(', ').toUpperCase()}`).join(' | ');
+    combat.bannerTimer = WAVE_TELEGRAPH_FRAMES;
+  }
 }
 
 /* One sim frame of encounter bookkeeping: spawns wave 0 the first time

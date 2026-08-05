@@ -11,6 +11,7 @@ import { resolveDamage, applyHit, rollCrit, resolvePoiseDamage } from './resolve
 import { applyPoiseDamage } from './poise.js';
 import { onMomentumHitTaken } from './resources.js';
 import { applyFeedbackDamage, staggerStand } from './combat_stand.js';
+import { applyStatus } from './status.js';
 import * as defense from './defense.js';
 import { DEATH_ANIM_FRAMES } from './constants.js';
 
@@ -79,7 +80,11 @@ export function resolveIncomingAttack(combat, pattern, atX, target, attacker) {
     attacker.knockVx = (attacker.x >= player.x ? 1 : -1) * 14;
     if (dead) {
       attacker.deathTimer = DEATH_ANIM_FRAMES;
-      dispatcher.runEffect('onKill', { entity: player, target: attacker, combo: player.comboCount, cancelled: false });
+      // `combat` was missing here (pre-existing gap, Phase 9b fix): every
+      // onKill listener that reads ctx.combat (e.g. an onKill-hooked
+      // affix) silently no-op'd on a Clash kill specifically. Now matches
+      // combat_player.js's onKill firing exactly.
+      dispatcher.runEffect('onKill', { entity: player, target: attacker, combo: player.comboCount, combat, cancelled: false });
       // Win is decided by encounter.js's stepEncounter, not here -- see combat_player.js's resolveHitboxes.
     }
     return;
@@ -101,10 +106,18 @@ export function resolveIncomingAttack(combat, pattern, atX, target, attacker) {
 
 function applyIncomingDamage(combat, pattern, atX, guardMult, causesHitstun, attacker) {
   const player = combat.player, juice = combat.juice, dispatcher = combat.dispatcher;
-  let dmg = resolveDamage({
+  const dmgCtx = {
     attacker, defender: player, pattern, isPlayerAttacker: false,
     guardMult: guardMult === 1 ? null : guardMult, bus: dispatcher
-  });
+  };
+  let dmg = resolveDamage(dmgCtx);
+  /* Phase 9b Toxic: resolveDamage's onHitResolve fires for either attack
+     direction already (resolvers.js's own comment says so) but nothing on
+     this, the enemy-hits-player side, ever read `ctx.pendingStatuses` back
+     -- combat_player.js's onHitLanded path (the player-hits-enemy side)
+     already does exactly this. Completes the existing, half-built
+     mechanism symmetrically rather than adding a new one. */
+  (dmgCtx.pendingStatuses || []).forEach(s => applyStatus(player, s.id, s.stacks));
 
   /* onDamageIncoming (mutable, tech §2.1): a second pass specific to
      damage about to hit the PLAYER, distinct from onHitResolve (which

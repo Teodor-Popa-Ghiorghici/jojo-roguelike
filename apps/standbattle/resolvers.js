@@ -131,6 +131,21 @@ export function resolveDamage(ctx) {
     // GDD §3.4 -- Stand Class damage baseline (Long-Range's -35%); a no-op (1) for Close/Mid
     const scheme = CONTROL_SCHEMES[ctx.attacker.stand.controlScheme] || CONTROL_SCHEMES.close;
     dmg *= scheme.damageMult;
+    /* Phase 9b Shielder (#4)/Phaser (#13): frontal immunity and "only
+       vulnerable during its own active frames" are both generic reads of
+       an optional def field, the same shape as Warden's below -- a no-op
+       for every enemy without them. Frontal immunity yields to a flanking
+       hit (z-offset past profiles.js's own FLANK_Z_THRESHOLD) or to a
+       poise-broken Shielder, per GDD §4.2's "must be flanked or poise-
+       broken". */
+    if (ctx.defender.def && ctx.defender.def.frontalBlock && ctx.defender.ai &&
+      ctx.defender.ai.state !== 'staggered' && Math.abs(ctx.attacker.z - ctx.defender.z) <= 20) {
+      dmg = 0;
+    }
+    if (ctx.defender.def && ctx.defender.def.intangibleExceptActive &&
+      (!ctx.defender.ai || ctx.defender.ai.state !== 'active')) {
+      dmg = 0;
+    }
   } else {
     dmg = ctx.pattern.dmgMult * ctx.attacker.def.power * 2;
     /* GDD §4.2 Warden (#12): "punishes you hard while your Stand is
@@ -139,6 +154,15 @@ export function resolveDamage(ctx) {
        (stand_classes.js). A no-op for every enemy without the field. */
     if (ctx.attacker.def.detachedStandPunishMult && ctx.defender.standDetached) {
       dmg *= ctx.attacker.def.detachedStandPunishMult;
+    }
+    /* Phase 9b: Cornered/Enraged-on-Kill/Reckless affixes -- three more
+       optional multipliers on the attacking enemy, same choke point,
+       same "absent field = no-op" contract as detachedStandPunishMult. */
+    const affixData = ctx.attacker.affixData;
+    if (affixData) {
+      if (affixData.cornered && ctx.attacker.hp / ctx.attacker.maxHp < 0.3) dmg *= affixData.cornered;
+      if (affixData.enraged) dmg *= affixData.enraged;
+      if (affixData.reckless) dmg *= affixData.reckless.dmgMult;
     }
   }
   if (ctx.critMult) dmg *= ctx.critMult;
@@ -199,6 +223,15 @@ export function resolvePersistenceCost(ctx) {
 export function applyHit(ctx, dmg) {
   const dead = applyDamage(ctx.defender, dmg);
   ctx.defender.breakActive = false;
+  /* Phase 9b Requiem-Touched: a one-shot "instead of dying" branch right at
+     the HP-mutation choke point, so it applies no matter which caller
+     landed the killing hit (a normal combo or a Clash counter alike). */
+  const affixData = ctx.defender.affixData;
+  if (dead && affixData && affixData.requiem_touched && !ctx.defender.requiemUsed) {
+    ctx.defender.requiemUsed = true;
+    ctx.defender.hp = Math.max(1, Math.round(ctx.defender.maxHp * affixData.requiem_touched));
+    return { dead: false };
+  }
   return { dead };
 }
 

@@ -15,6 +15,7 @@
 import { gainPersistence, gainMomentum } from './resources.js';
 import { spawnHazard } from './hazards.js';
 import { applyDamage } from './fighter.js';
+import { AFFIX_EFFECT_LIB } from './affix_effect_lib.js';
 import { ARENA_MIN, ARENA_MAX, ARENA_Z_MIN, ARENA_Z_MAX } from './constants.js';
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -179,7 +180,15 @@ export const EFFECT_LIB = {
   cancel(ctx, data) {
     if (data && data.slot != null && ctx.slot !== data.slot) return;
     ctx.cancelled = true;
-  }
+  },
+
+  /* Phase 9b affix-side verbs (drainPersistenceOnHit, healAttackerPctOfDamage,
+     reflectFlatDamageToAttacker, explodeOnDeath, spawnMinionsOnDeath,
+     enrageIfAllyDied) -- moved to affix_effect_lib.js and merged in below,
+     purely to keep this file under the repo's 300-line cap. Still one
+     EFFECT_LIB table as far as content_registry.js/installAffix are
+     concerned (invariant 6). */
+  ...AFFIX_EFFECT_LIB
 };
 
 /* ---- QUERIES (pure value reducers) -------------------------------------- */
