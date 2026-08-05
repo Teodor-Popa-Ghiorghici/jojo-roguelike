@@ -20,8 +20,8 @@ import { STANDS } from './data.js';
 import { createPlayerFighter, createStandFighter, clampPersistence } from './fighter.js';
 import { createDispatcher } from './hooks.js';
 import { createStatPipeline } from './stats.js';
-import { createContentRegistry, loadContent } from './content_registry.js';
-import { installRunBuffs } from './effect_lib.js';
+import { createContentRegistry, assertContentValid, installFragment } from './content_registry.js';
+import { FRAGMENT_LIST, FRAGMENTS, DONORS } from './fragments.js';
 import { stepStatuses } from './status.js';
 import { createJuice } from './juice.js';
 import { createFixedStepLoop } from './sim_loop.js';
@@ -37,22 +37,29 @@ const INPUT_BUFFER_FRAMES = 9; // 150ms -- matches tech §3.6's "9-frame buffer"
 const TOKEN_MELEE_COUNT = 2; // GDD §16 -- 3 under Menace's Crowded condition, not implemented yet
 const TOKEN_RANGED_COUNT = 1; // GDD §16 -- a separate, smaller pool; unused by Phase 5's melee-only roster
 
-export function createCombat(enemyOrEncounterDef, runBuffs, opts, rng) {
+export function createCombat(enemyOrEncounterDef, ownedFragments, opts, rng) {
   opts = opts || {};
   const standDef = STANDS.star_platinum;
 
   /* Effect/query/content pipeline (tech §2.1/§2.2/§2.9, Phase 3) is built
-     BEFORE any fighter, because the run buffs' getMaxPersistence query
-     (deliverable 6) must already be registered when the player's max
-     Persistence is resolved a few lines down. contentRegistry is empty
-     today -- no Fragment/Relic content exists yet (Phase 4+) -- but
-     loadContent() still runs so the validator is exercised on every real
-     fight, not just in content_check.js's standalone regression test. */
+     BEFORE any fighter, because a Fragment's getMaxPersistence query must
+     already be registered when the player's max Persistence is resolved
+     a few lines down. Phase 7: the WHOLE static Fragment pool is
+     registered and validated every fight (assertContentValid), exactly
+     like Phase 3 established for loadContent -- the validator runs on
+     every real fight, not just fragment_check.js's standalone test --
+     but only `ownedFragments` (this run's actual build, index.js's
+     runState.fragmentsBySlot) is ever installed into the dispatcher.
+     Being in the pool and being owned are deliberately different things
+     now that Fragments are a real, chosen build instead of the prototype-
+     era RUN_BUFFS every fight silently had access to. */
   const dispatcher = createDispatcher();
   const stats = createStatPipeline();
-  installRunBuffs(dispatcher, runBuffs); // ports the 3 flat multiplier buffs off bespoke fighter.js fields
   const contentRegistry = createContentRegistry();
-  loadContent(contentRegistry, dispatcher);
+  DONORS.forEach(d => contentRegistry.registerDonor(d));
+  FRAGMENT_LIST.forEach(f => contentRegistry.registerFragment(f));
+  assertContentValid(contentRegistry, dispatcher);
+  (ownedFragments || []).forEach(owned => installFragment(dispatcher, FRAGMENTS[owned.id], owned.level));
 
   const player = createPlayerFighter(standDef, ARENA_MIN + 122);
   player.maxPersistence = dispatcher.runQuery('getMaxPersistence', player.maxPersistence, { entity: player });
@@ -81,6 +88,7 @@ export function createCombat(enemyOrEncounterDef, runBuffs, opts, rng) {
     player, stand, enemies: [], entities: [player, stand], juice, dispatcher, stats, keys, combatRng, encounterRng,
     tokenSystem: createTokenSystem(TOKEN_MELEE_COUNT, TOKEN_RANGED_COUNT),
     hazards: [], // GDD §4.6 Phase 2's "rule" (hazards.js) -- empty for every fight that never spawns one
+    timeStopFrames: 0, // Phase 7 (GDD §6.1's The World donor) -- generic "the world pauses, the User doesn't" primitive
     spawnOpts: { hpMult: opts.hpMult, speedMult: opts.speedMult, tint: opts.tint },
     outcome: 'fighting', banner: '', bannerTimer: 84, // 1400ms
     log: [], pushLog: push, debug: false
@@ -118,9 +126,22 @@ export function createCombat(enemyOrEncounterDef, runBuffs, opts, rng) {
     if (juice.update(FRAME_MS)) return; // hit-stop freezes the sim; see the Phase 1 report
     stepStand(combat); // before updatePlayer so player.projecting/.strained are fresh this frame (GDD §3.2/§3.4)
     updatePlayer(combat);
-    stepCrowd(combat, aiRng); // tokens (GDD §16) -> every enemy's AI/attack -> wave-spawn/win-condition (encounter.js)
-    stepHazards(combat); // GDD §4.6 Phase 2's "rule" -- a no-op sweep over an empty list for every other fight
-    combat.entities.forEach(stepStatuses); // GDD §3.10 / tech §2.6 -- statuses are data, the engine only ticks them
+    /* Phase 7's time-stop primitive (The World donor, GDD §6.1): "you act,
+       the world doesn't" -- the User/Stand keep going (already stepped
+       above), but the crowd (AI, tokens, projectiles, wave-spawn/win-check)
+       and hazards freeze solid while this counts down. A Fragment sets it
+       via a plain integer on `combat` (effect_lib.js's triggerTimeStop);
+       zero effect on any fight that never touches it. */
+    if (combat.timeStopFrames > 0) {
+      combat.timeStopFrames -= 1;
+    } else {
+      stepCrowd(combat, aiRng); // tokens (GDD §16) -> every enemy's AI/attack -> wave-spawn/win-condition (encounter.js)
+      stepHazards(combat); // GDD §4.6 Phase 2's "rule" -- a no-op sweep over an empty list for every other fight
+    }
+    combat.entities.forEach(e => {
+      if (combat.timeStopFrames > 0 && e.kind === 'enemy') return; // the frozen world's own clocks stop too
+      stepStatuses(e); // GDD §3.10 / tech §2.6 -- statuses are data, the engine only ticks them
+    });
     if (player.hp <= 0 && combat.outcome === 'fighting') combat.outcome = 'lose';
   }
 

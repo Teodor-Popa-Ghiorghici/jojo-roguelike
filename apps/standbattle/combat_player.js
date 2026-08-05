@@ -63,7 +63,7 @@ function startDodge(combat) {
      doesn't consume a charge it never spent. */
   if (combat.player.projecting) { combat.dispatcher.fire('onMoveDenied', {}); return; }
   if (defense.startStep(combat.player, nearestAliveEnemy(combat))) {
-    combat.dispatcher.runEffect('onStepStart', { entity: combat.player, cancelled: false });
+    combat.dispatcher.runEffect('onStepStart', { entity: combat.player, combat, cancelled: false });
   } else {
     combat.dispatcher.fire('onMoveDenied', {});
   }
@@ -89,7 +89,7 @@ function attemptMove(combat, moveId) {
   if (persistenceCost && player.persistence < persistenceCost) return false;
   if (move.costs.momentum && player.momentum < move.costs.momentum) return false;
 
-  const startCtx = { entity: player, move, cancelled: false };
+  const startCtx = { entity: player, move, combat, cancelled: false };
   combat.dispatcher.runEffect('onMoveStart', startCtx);
   if (startCtx.cancelled) return false;
 
@@ -121,7 +121,10 @@ function tryCancel(combat) {
   if (!entry) return;
   const stand = player.stand;
   const targetId = kind === 'special' ? stand.moves.special : kind === 'rush' ? stand.standRush : stand.moves[kind];
-  if (entry.maxSelfChain && targetId === move.id && (player.chainCounts[move.id] || 0) >= entry.maxSelfChain) return;
+  // Phase 7: the authored cap resolves through getChainCap so a Fragment can rewrite it (GDD §6.1) -- a no-op without one
+  const cap = entry.maxSelfChain == null ? Infinity
+    : combat.dispatcher.runQuery('getChainCap', entry.maxSelfChain, { entity: player, slot: move.slot });
+  if (targetId === move.id && (player.chainCounts[move.id] || 0) >= cap) return;
   if (!attemptMove(combat, targetId)) return;
   player.bufferedAction = null;
 }
@@ -148,7 +151,7 @@ function resolveHitboxes(combat, move) {
     const partMult = dmgMultOf(target);
     player.hitsLanded++;
     const critInfo = rollCrit({ attacker: player, rng: combat.combatRng, stats: combat.stats, bus });
-    const dmgCtx = { attacker: player, defender: enemy, hitbox: hb, move, isPlayerAttacker: true, critMult: critInfo.mult, partMult, bus };
+    const dmgCtx = { attacker: player, defender: enemy, hitbox: hb, move, isPlayerAttacker: true, critMult: critInfo.mult, partMult, bus, combat };
     const dmg = resolveDamage(dmgCtx);
     const { dead } = applyHit({ defender: enemy }, dmg);
     applyPoiseDamage(enemy, resolvePoiseDamage({ hitbox: hb, bus }));
@@ -167,7 +170,7 @@ function resolveHitboxes(combat, move) {
        an on-hit status (e.g. "your 3rd Light applies 2 Virus") targets,
        distinct from onHitResolve's damage-number mutation above. */
     const landedCtx = {
-      attacker: player, defender: enemy, move, slot: move.slot,
+      attacker: player, defender: enemy, move, slot: move.slot, combat,
       chainCount: player.chainCounts[move.id] || 0, crit: critInfo.crit, dead, statuses: [], cancelled: false
     };
     bus.runEffect('onHitLanded', landedCtx);
@@ -185,7 +188,7 @@ function resolveHitboxes(combat, move) {
     if (dead) {
       enemy.deathTimer = DEATH_ANIM_FRAMES;
       gainMomentum(player, 15);
-      bus.runEffect('onKill', { entity: player, target: enemy, combo: player.comboCount, cancelled: false });
+      bus.runEffect('onKill', { entity: player, target: enemy, combo: player.comboCount, combat, cancelled: false });
       /* Win is no longer decided here: encounter.js's stepEncounter checks
          the encounter's own winCondition (data field, 'killAll' today)
          once per frame, after every enemy has been stepped -- the single

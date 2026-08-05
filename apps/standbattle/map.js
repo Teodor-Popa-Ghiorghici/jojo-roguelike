@@ -6,6 +6,7 @@
 import { px, poly, disc, ellipse, line, vband, dither, ring } from './draw.js';
 import { text, paragraph, textWidth } from './font.js';
 import { SKY, TOWN, FX, S, SH, BASE, LT, RIM } from './palette.js';
+import { drawBuildSummary } from './rewards.js';
 
 const MARGIN = 56;
 const TYPE = {
@@ -140,14 +141,7 @@ export function drawMap(g, W, H, nodes, runState, tsec) {
   text(g, 'ACT I  MORIOH', 8, 4, { scale: 2, color: '#FFE6F0', outline: '#3A0A1E' });
   text(g, 'DIAMOND IS UNBREAKABLE', 8, 18, { scale: 1, color: '#B08AC8' });
   text(g, 'HP ' + Math.round(runState.hp) + '/' + runState.maxHp, W - 8, 6, { scale: 2, align: 'right', color: '#5FD672', outline: '#0E4A22' });
-  if (runState.buffs.length) {
-    runState.buffs.forEach((b, i) => {
-      const tw = textWidth(b.label, 1);
-      px(g, 6, H - 30 - i * 12, tw + 8, 11, '#080910');
-      px(g, 6, H - 30 - i * 12, 2, 11, '#FFD24A');
-      text(g, b.label, 11, H - 28 - i * 12, { scale: 1, color: '#FFD24A' });
-    });
-  }
+  drawBuildSummary(g, 6, H - 18, runState); // Phase 7 deliverable 6 -- what RUN_BUFFS' list used to occupy
   text(g, 'CLICK THE GLOWING NODE', W / 2, H - 12, {
     scale: 1, align: 'center', color: '#C8D0F0', shadow: '#05060C',
     alpha: 0.6 + 0.4 * Math.sin(tsec * 3)

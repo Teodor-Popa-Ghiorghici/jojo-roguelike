@@ -81,7 +81,13 @@ export const EFFECT_HOOKS = [
    way getMoveFrames wraps resolveMoveFrames -- see resolvers.js. */
 export const QUERY_HOOKS = [
   'getDamage', 'getMoveFrames', 'getPoiseDamage', 'getPersistenceCost',
-  'getMaxPersistence', 'getMoveSpeed', 'getTetherLength', 'getFeedbackRate'
+  'getMaxPersistence', 'getMoveSpeed', 'getTetherLength', 'getFeedbackRate',
+  /* Phase 7 (GDD §6.1's "no chain cap" example, moves.js's cancels[].
+     maxSelfChain): a move's authored self-chain cap now resolves through
+     this query instead of being read as a raw literal, the same "compute
+     once, let a Fragment rewrite it" shape every other resolver already
+     uses (combat_player.js's tryCancel). */
+  'getChainCap'
 ];
 
 const HOOK_KIND = {};

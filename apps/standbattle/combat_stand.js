@@ -112,7 +112,7 @@ export function stepStand(combat) {
   if (dist > tetherPx) {
     player.strained = true;
     spendPersistence(player, STRAIN_PERSISTENCE_PER_SEC / SIM_HZ);
-    const strainCtx = { entity: player, dist, tetherPx, cancelled: false };
+    const strainCtx = { entity: player, dist, tetherPx, combat, cancelled: false };
     dispatcher.runEffect('onTetherStrain', strainCtx);
     if (!strainCtx.cancelled) {
       const dragLen = dist || 1;

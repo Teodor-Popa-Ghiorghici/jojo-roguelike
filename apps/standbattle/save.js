@@ -5,12 +5,24 @@
    instead of throwing, and the two blobs are loaded independently so a
    broken run save can never take meta down with it. */
 
-const RUN_VERSION = 1;
+const RUN_VERSION = 2;
 const META_VERSION = 1;
 
 /* Migration table: RUN_MIGRATIONS[v] upgrades data from version v to v+1.
-   No migrations exist yet -- v1 is the first schema. */
-const RUN_MIGRATIONS = {};
+   v1 -> v2 (Phase 7): RUN_BUFFS' bespoke `buffs` array is retired in
+   favour of the real Fragment system (fragment_offers.js) -- a v1 save's
+   `buffs` carried no state worth preserving (they were re-derived, never
+   player-authored choices with commitment behind them the way an owned
+   Fragment now is), so this just drops the field and seeds the new
+   Fragment-run state fresh. upgradePoints is filled in properly by
+   index.js on load (it needs the Stand's devPotential stat, which this
+   file doesn't know about), not here. */
+const RUN_MIGRATIONS = {
+  1: data => {
+    const { buffs, ...rest } = data;
+    return { ...rest, fragmentsBySlot: {}, nodesSinceRare: 0, slotOfferCounts: {}, upgradePoints: null };
+  }
+};
 const META_MIGRATIONS = {};
 
 function defaultMeta() {

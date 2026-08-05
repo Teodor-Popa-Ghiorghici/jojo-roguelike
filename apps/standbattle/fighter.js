@@ -39,13 +39,16 @@ export function attachComponentStubs(entity) {
   return entity;
 }
 
-/* `runBuffs` was consumed here directly through Phase 2 (three bespoke
-   fields: powerMult/speedMult/a maxPersistence bonus). Phase 3 ports all
-   three onto the hooks.js query pipeline (effect_lib.js's installRunBuffs,
-   wired in combat.js) so this factory no longer knows buffs exist at all
-   -- deliverable 6's "delete their bespoke code". maxPersistence starts at
-   the Stand's base 100 and is resolved through getMaxPersistence once,
-   right after this call, by combat.js. */
+/* Run-scoped power-ups were consumed here directly through Phase 2 (three
+   bespoke fields: powerMult/speedMult/a maxPersistence bonus). Phase 3
+   ported all three onto the hooks.js query pipeline instead, so this
+   factory no longer knows buffs exist at all -- deliverable 6's "delete
+   their bespoke code". Phase 7 retired that placeholder system entirely
+   in favour of real Fragments (content_registry.js's installFragment,
+   wired in combat.js), which install onto the exact same query hooks;
+   this factory still doesn't need to know they exist. maxPersistence
+   starts at the Stand's base 100 and is resolved through
+   getMaxPersistence once, right after this call, by combat.js. */
 export function createPlayerFighter(stand, x, z) {
   const entity = {
     id: 'player', kind: 'player', stand, x, z: z == null ? Z_REST : z, facing: 1,
