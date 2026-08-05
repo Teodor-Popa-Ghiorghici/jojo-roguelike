@@ -20,8 +20,13 @@ import { STANDS } from './data.js';
 import { createPlayerFighter, createStandFighter, clampPersistence } from './fighter.js';
 import { createDispatcher } from './hooks.js';
 import { createStatPipeline } from './stats.js';
-import { createContentRegistry, assertContentValid, installFragment } from './content_registry.js';
+import {
+  createContentRegistry, assertContentValid, installFragment, installRelic, installDisc, installDuo
+} from './content_registry.js';
 import { FRAGMENT_LIST, FRAGMENTS, DONORS } from './fragments.js';
+import { RELIC_LIST } from './relics.js';
+import { DISCS } from './content/discs.js';
+import { DUO_LIST } from './duo_fragments.js';
 import { stepStatuses } from './status.js';
 import { createJuice } from './juice.js';
 import { createFixedStepLoop } from './sim_loop.js';
@@ -59,12 +64,34 @@ export function createCombat(enemyOrEncounterDef, ownedFragments, opts, rng) {
   const contentRegistry = createContentRegistry();
   DONORS.forEach(d => contentRegistry.registerDonor(d));
   FRAGMENT_LIST.forEach(f => contentRegistry.registerFragment(f));
+  RELIC_LIST.forEach(r => contentRegistry.registerRelic(r));
+  DISCS.forEach(d => contentRegistry.registerDisc(d));
+  DUO_LIST.forEach(d => contentRegistry.registerDuo(d));
   assertContentValid(contentRegistry, dispatcher);
   (ownedFragments || []).forEach(owned => installFragment(dispatcher, FRAGMENTS[owned.id], owned.level));
+  /* Phase 10: Relics/Duos are binary owned/not-owned, no slot/level (tech
+     §3's own schemas never gave them one) -- opts.relics/opts.duos are
+     plain arrays of owned ids, resolved against their pool the same way
+     ownedFragments resolves against FRAGMENTS. opts.discs (GDD §6.4) is a
+     {slot: discId} map for the three slots a Disc can occupy; a Disc
+     installs its full clause set unconditionally and unleveled -- see
+     content/discs.js's header for why "swap in another Stand's move" was
+     scoped down to "fully overwrite this slot's behaviour". */
+  const relicById = new Map(RELIC_LIST.map(r => [r.id, r]));
+  const discById = new Map(DISCS.map(d => [d.id, d]));
+  const duoById = new Map(DUO_LIST.map(d => [d.id, d]));
+  (opts.relics || []).forEach(id => { const def = relicById.get(id); if (def) installRelic(dispatcher, def); });
+  (opts.duos || []).forEach(id => { const def = duoById.get(id); if (def) installDuo(dispatcher, def); });
+  Object.values(opts.discs || {}).forEach(id => { const def = discById.get(id); if (def) installDisc(dispatcher, def); });
 
   const player = createPlayerFighter(standDef, ARENA_MIN + 122);
   player.maxPersistence = dispatcher.runQuery('getMaxPersistence', player.maxPersistence, { entity: player });
   clampPersistence(player);
+  /* Phase 10 (Crazy Diamond donor's "return-to-position" identity, GDD
+     §6.1): a fixed snapshot of the User's own starting spot, read by
+     item_effect_lib.js's returnToAnchor -- no per-encounter "restore
+     point" system exists otherwise, so this is the one anchor available. */
+  const spawnAnchor = { x: player.x, z: player.z };
   /* Stand Class (GDD §3.4, Phase 9a): `standDef.controlScheme` picks the
      one CONTROL_SCHEMES entry that governs Step charges/damage/movement
      for this whole fight -- stamped onto the entity once here rather than
@@ -96,6 +123,7 @@ export function createCombat(enemyOrEncounterDef, ownedFragments, opts, rng) {
     tokenSystem: createTokenSystem(TOKEN_MELEE_COUNT, TOKEN_RANGED_COUNT),
     hazards: [], // GDD §4.6 Phase 2's "rule" (hazards.js) -- empty for every fight that never spawns one
     timeStopFrames: 0, // Phase 7 (GDD §6.1's The World donor) -- generic "the world pauses, the User doesn't" primitive
+    spawnAnchor, tickSecondTimer: 60, // Phase 10 -- see spawnAnchor's own comment above and stepFrame's onCombatTick dispatch below
     spawnOpts: { hpMult: opts.hpMult, speedMult: opts.speedMult, tint: opts.tint, isElite: opts.isElite, menaceRank: opts.menaceRank },
     outcome: 'fighting', banner: '', bannerTimer: 84, // 1400ms
     log: [], pushLog: push, debug: false
@@ -152,6 +180,17 @@ export function createCombat(enemyOrEncounterDef, ownedFragments, opts, rng) {
       if (combat.timeStopFrames > 0 && e.kind === 'enemy') return; // the frozen world's own clocks stop too
       stepStatuses(e); // GDD §3.10 / tech §2.6 -- statuses are data, the engine only ticks them
     });
+    /* Phase 10 (tech §3's Stone Mask example): fires once per real
+       sim-second, never during time-stop (the world pausing pauses this
+       too -- a Relic's periodic cost/payoff is part of "the world", not
+       the User acting). */
+    if (combat.timeStopFrames <= 0) {
+      combat.tickSecondTimer -= 1;
+      if (combat.tickSecondTimer <= 0) {
+        combat.tickSecondTimer = 60;
+        dispatcher.runEffect('onCombatTick', { entity: player, combat });
+      }
+    }
     if (player.hp <= 0 && combat.outcome === 'fighting') combat.outcome = 'lose';
   }
 

@@ -16,6 +16,7 @@ import { gainPersistence, gainMomentum } from './resources.js';
 import { spawnHazard } from './hazards.js';
 import { applyDamage } from './fighter.js';
 import { AFFIX_EFFECT_LIB } from './affix_effect_lib.js';
+import { ITEM_EFFECT_LIB, ITEM_QUERY_LIB } from './item_effect_lib.js';
 import { ARENA_MIN, ARENA_MAX, ARENA_Z_MIN, ARENA_Z_MAX } from './constants.js';
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -188,7 +189,12 @@ export const EFFECT_LIB = {
      purely to keep this file under the repo's 300-line cap. Still one
      EFFECT_LIB table as far as content_registry.js/installAffix are
      concerned (invariant 6). */
-  ...AFFIX_EFFECT_LIB
+  ...AFFIX_EFFECT_LIB,
+  /* Phase 10 item-side verbs (healEntity, healPctOfDamage, spawnFriendlyMote,
+     reflectPctDamageToAttacker, cureStatus, returnToAnchor,
+     applyStatusToNearby, damageNearby, consumeStatusForBonus, selfDamage)
+     -- moved to item_effect_lib.js, same reason/discipline as above. */
+  ...ITEM_EFFECT_LIB
 };
 
 /* ---- QUERIES (pure value reducers) -------------------------------------- */
@@ -223,7 +229,11 @@ export const QUERY_LIB = {
     const inst = ctx.defender && ctx.defender.statuses && ctx.defender.statuses.find(s => s.id === 'virus');
     if (!inst || inst.stacks < (data.minStacks || 1)) return value;
     return value * data.mult;
-  }
+  },
+  /* Phase 10 item-side query (bonusIfDefenderStatus) -- see
+     item_effect_lib.js's own header for why it generalizes the verb
+     above instead of duplicating it per status. */
+  ...ITEM_QUERY_LIB
 };
 
 /* GDD §6.7: "Every Fragment must do at least one of: apply, amplify,
@@ -249,12 +259,25 @@ export const VERB_CATEGORIES = {
   chainedDamageMult: [],
   chainedApplyStatus: ['apply-status'],
   applyStatusUnconditional: ['apply-status'],
-  cancel: ['rewrite-slot']
+  cancel: ['rewrite-slot'],
+  /* Phase 10 item-side verbs -- see item_effect_lib.js's own per-verb
+     comments for which GDD §6.1 donor example each one generalizes. */
+  healEntity: [],
+  healPctOfDamage: ['convert-resource'],
+  spawnFriendlyMote: ['rewrite-slot', 'convert-resource'],
+  reflectPctDamageToAttacker: ['convert-resource'],
+  cureStatus: ['consume-status'],
+  returnToAnchor: ['rewrite-slot'],
+  applyStatusToNearby: ['apply-status'],
+  damageNearby: [],
+  consumeStatusForBonus: ['consume-status', 'convert-resource'],
+  selfDamage: []
 };
 export const QUERY_VERB_CATEGORIES = {
   multiplyIfPlayerAttacker: [],
   addFlat: [],
   multiplyFlat: [],
   removeCapForSlot: ['rewrite-slot'],
-  bonusIfDefenderVirusStacks: []
+  bonusIfDefenderVirusStacks: [],
+  bonusIfDefenderStatus: []
 };

@@ -19,7 +19,7 @@ import { initPurge } from './purge.js';
 import { generateEncounterBudget } from './encounter_budget.js';
 import { rollAffixes, applyAffixesToEnemy } from './affixes.js';
 import { initSummonState } from './summons.js';
-import { installAffix } from './content_registry.js';
+import { installAffix } from './content_registry_affix.js';
 import { ARENA_MAX, Z_REST } from './constants.js';
 
 export const WAVE_TELEGRAPH_FRAMES = 90; // 1.5s, GDD §4.4: "later waves telegraph 1.5s before arriving"

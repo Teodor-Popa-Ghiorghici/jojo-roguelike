@@ -69,7 +69,14 @@ export const EFFECT_HOOKS = [
   'onMoveStart', 'onHitResolve', 'onHitLanded', 'onCritCheck', 'onKill',
   'onDamageIncoming', 'onDamageTaken', 'onStaggerStart', 'onStepStart',
   'onClashSuccess', 'onPerfectClash', 'onGuardBreak',
-  'onProjectStart', 'onProjectEnd', 'onTetherStrain', 'onFeedbackDamage'
+  'onProjectStart', 'onProjectEnd', 'onTetherStrain', 'onFeedbackDamage',
+  /* Phase 10 (tech §3's own Stone Mask example: "onCombatTick ->
+     selfDamage"): the one hook combat.js fires once per sim-SECOND (not
+     every frame -- keeps a Relic's "1 HP/sec" literal instead of forcing
+     fractional per-frame damage), ctx: { entity: player, combat }. Needed
+     for any Relic/Fragment whose cost or payoff is periodic rather than
+     hit-triggered. */
+  'onCombatTick'
 ];
 
 /* getMaxPersistence/getMoveSpeed extend the mission's minimum four
