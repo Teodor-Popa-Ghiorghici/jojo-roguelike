@@ -5,7 +5,7 @@
    instead of throwing, and the two blobs are loaded independently so a
    broken run save can never take meta down with it. */
 
-const RUN_VERSION = 2;
+const RUN_VERSION = 3;
 const META_VERSION = 1;
 
 /* Migration table: RUN_MIGRATIONS[v] upgrades data from version v to v+1.
@@ -16,7 +16,16 @@ const META_VERSION = 1;
    Fragment now is), so this just drops the field and seeds the new
    Fragment-run state fresh. upgradePoints is filled in properly by
    index.js on load (it needs the Stand's devPotential stat, which this
-   file doesn't know about), not here. */
+   file doesn't know about), not here.
+
+   v2 -> v3 (Phase 8): deliberately NOT migrated. v2's run state is a
+   linear `nodeIndex` into a fixed 6-node array; v3 is a seeded DAG
+   (`graph`/`nodeId`/`visited`, run_flow.js). There is no sound mapping
+   from "index 3 of 6" onto a position in a graph that didn't exist when
+   that save was written, so a v2 save falls through `migrate()`'s
+   existing "no migration step -> return fallback" path below (line ~38)
+   exactly like any other unmigratable version -- the player starts a
+   fresh run instead of resuming into a nonsensical position. */
 const RUN_MIGRATIONS = {
   1: data => {
     const { buffs, ...rest } = data;

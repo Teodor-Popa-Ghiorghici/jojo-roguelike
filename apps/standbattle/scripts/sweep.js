@@ -2,12 +2,20 @@
    many seeds per enemy type and reports aggregate outcomes only -- never
    per-run detail, which is the whole point (a dump of N run objects costs
    tens of thousands of tokens and carries them for the rest of the
-   session). Prints at most 20 lines on success; --verbose prints the full
-   per-seed breakdown for whichever group(s) failed to reach a decisive
-   outcome every time. */
+   session). Also sweeps the Act I map generator (Phase 8) over the same
+   --runs=N seeds: 0-Rest/0-Shop paths, pity-gap violations, and the
+   resample-retry distribution. Prints at most 20 lines on success;
+   --verbose prints the full per-seed breakdown for whichever group(s)
+   failed. */
 
 import { runHeadlessFight } from '../headless_harness.js';
 import { ENEMIES, BOSS_KILLER_QUEEN } from '../data.js';
+import { createRng } from '../rng.js';
+import { generateAct1Map } from '../map_gen.js';
+import { checkAll } from '../map_constraints.js';
+import { ACT1_CONSTRAINTS } from '../map_data.js';
+import { createRunFragmentState, generateOffer, skipOfferForPity, PITY_THRESHOLD } from '../fragment_offers.js';
+import { decideCombatRewardKind } from '../economy.js';
 
 const verbose = process.argv.includes('--verbose');
 const runsArg = process.argv.find(a => a.startsWith('--runs='));
@@ -46,13 +54,80 @@ if (verbose) {
   });
 }
 
-if (undecided.length === 0) {
+/* Phase 8: same RUNS seeds, but for the Act I map generator instead of
+   combat -- the mission's own bar is "no seed with 0 Rests or 0 Shops on
+   any path; no run exceeding 4 nodes without a Rare+; generator retry
+   count within a sane bound (report the distribution)". Reuses
+   run_flow.js's exact reward-decision functions (decideCombatRewardKind/
+   skipOfferForPity) rather than re-deriving the pity rule, same as
+   map_check.js. */
+const RARE_PLUS = new Set(['rare', 'epic', 'legendary']);
+function worstPityGap(graph, rng) {
+  let path = graph.paths[0];
+  graph.paths.forEach(p => { if (p.length > path.length) path = p; });
+  const runState = createRunFragmentState();
+  runState.upgradePoints = 3;
+  let worst = 0;
+  path.forEach(id => {
+    const node = graph.nodes[id];
+    if (node.type === 'elite' || node.type === 'boss') {
+      runState.nodesSinceRare = Math.max(runState.nodesSinceRare, PITY_THRESHOLD);
+      generateOffer(rng, runState);
+    } else if (node.type === 'combat') {
+      if (decideCombatRewardKind(rng, runState) === 'yen') skipOfferForPity(runState);
+      else generateOffer(rng, runState);
+    } else if (node.type === 'treasure') {
+      generateOffer(rng, runState);
+    } else return;
+    worst = Math.max(worst, runState.nodesSinceRare);
+  });
+  return worst;
+}
+
+let zeroRestPaths = 0, zeroShopPaths = 0, worstPityGapOverall = 0, constraintFailures = 0, repairedCount = 0;
+const attempts = [];
+for (let i = 0; i < RUNS; i++) {
+  const rng = createRng(`mapsweep-${i}`);
+  const graph = generateAct1Map(rng.stream('map'));
+  attempts.push(graph.attempts);
+  if (graph.repaired) repairedCount++;
+  if (!checkAll(graph, ACT1_CONSTRAINTS).pass) constraintFailures++;
+  graph.paths.forEach(p => {
+    if (!p.some(id => graph.nodes[id].type === 'rest')) zeroRestPaths++;
+    if (!p.some(id => graph.nodes[id].type === 'shop')) zeroShopPaths++;
+  });
+  const gap = worstPityGap(graph, rng.stream('rewards'));
+  if (gap > worstPityGapOverall) worstPityGapOverall = gap;
+}
+attempts.sort((a, b) => a - b);
+const meanAttempts = attempts.reduce((s, a) => s + a, 0) / RUNS;
+const mapOk = zeroRestPaths === 0 && zeroShopPaths === 0 && worstPityGapOverall <= PITY_THRESHOLD && constraintFailures === 0;
+
+if (verbose) {
+  console.log(`-- map generator (${RUNS} seeds) --`);
+  console.log(`  attempts: mean ${meanAttempts.toFixed(2)}, p50 ${attempts[Math.floor(RUNS * 0.5)]}, p95 ${attempts[Math.floor(RUNS * 0.95)]}, max ${attempts[RUNS - 1]}`);
+  console.log(`  repair floor hit: ${repairedCount}/${RUNS} (${(repairedCount / RUNS * 100).toFixed(3)}%)`);
+}
+
+const combatOk = undecided.length === 0;
+
+if (combatOk) {
   groups.forEach(g => console.log(`OK   ${g.id}: ${g.runs}/${g.runs} decisive — ${JSON.stringify(g.outcomes)}`));
-  console.log('\nAll sweeps reached a decisive outcome every run.');
 } else {
   undecided.forEach(g => {
     console.log(`FAIL ${g.id}: ${g.outcomes.timeout}/${g.runs} runs hit the frame cap without a decisive outcome`);
   });
-  console.log(`\n${undecided.length}/${groups.length} target(s) had non-decisive runs.`);
+}
+if (mapOk) {
+  console.log(`OK   map: ${RUNS}/${RUNS} satisfy constraints; 0 seeds with a 0-Rest/0-Shop path; worst pity gap ${worstPityGapOverall}/${PITY_THRESHOLD}; retry mean ${meanAttempts.toFixed(1)}, repair floor ${(repairedCount / RUNS * 100).toFixed(2)}%`);
+} else {
+  console.log(`FAIL map: ${constraintFailures} constraint failure(s), ${zeroRestPaths} 0-Rest path(s), ${zeroShopPaths} 0-Shop path(s), worst pity gap ${worstPityGapOverall}/${PITY_THRESHOLD}`);
+}
+
+if (combatOk && mapOk) {
+  console.log('\nAll sweeps (combat decisiveness + map fairness) pass.');
+} else {
+  if (!combatOk) console.log(`\n${undecided.length}/${groups.length} combat target(s) had non-decisive runs.`);
+  if (!mapOk) console.log('\nMap generator fairness sweep FAILED.');
   process.exit(1);
 }
