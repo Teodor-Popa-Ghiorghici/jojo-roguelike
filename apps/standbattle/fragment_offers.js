@@ -54,8 +54,9 @@ function buildCandidates(runState) {
   }).filter(Boolean);
 }
 
-function weightOf(candidate, runState, ownedTags) {
+function weightOf(candidate, runState, ownedTags, rarityMult) {
   let w = RARITY_BASE_WEIGHT[candidate.frag.rarity] || 1;
+  if (RARE_PLUS.has(candidate.frag.rarity)) w *= rarityMult;
   const shared = (candidate.frag.tags || []).filter(t => ownedTags.has(t)).length;
   w *= 1 + CONVERGENCE_BONUS * Math.min(shared, 3); // convergence: capped so one Fragment can't dominate the whole pool
   const emptySlot = !runState.fragmentsBySlot[candidate.frag.slot];
@@ -79,11 +80,17 @@ function weightedPickIndex(weights, idxs, rng) {
    §6.8's own wording ("the next offer guarantees...", "empty for N
    offers") tracks offers, not picks. Returns an array of up to 3
    candidates; fewer only in the late-run edge case where the whole pool
-   is already owned-and-maxed. */
-export function generateOffer(rng, runState) {
+   is already owned-and-maxed.
+
+   `rarityMult` (Phase 8, default 1 -- fully backward compatible)
+   multiplies Rare+ base weight; the caller (run_flow.js) passes
+   tension.js's `tensionRarityMult(runState.tension)` so Tension raises
+   reward rarity by the same amount it raises encounter budget, without
+   this file needing to know Tension exists. */
+export function generateOffer(rng, runState, rarityMult = 1) {
   const candidates = buildCandidates(runState);
   const ownedTags = ownedTagSet(runState);
-  const weights = candidates.map(c => weightOf(c, runState, ownedTags));
+  const weights = candidates.map(c => weightOf(c, runState, ownedTags, rarityMult));
   const allIdxs = candidates.map((_, i) => i);
 
   const chosen = [];
@@ -124,6 +131,20 @@ export function applyOffer(runState, candidate) {
   runState.fragmentsBySlot[candidate.frag.slot] = { id: candidate.frag.id, level: candidate.level };
   runState.slotOfferCounts[candidate.frag.slot] = 0;
   return { overwrote, previous: prevOwned };
+}
+
+/* Phase 8: a Combat node's reward is "Fragment offer or Yen" (GDD §5.3)
+   -- when economy.js's roll picks Yen, no offer is generated at all, so
+   `nodesSinceRare` (this file's own field) has to advance here instead
+   of inside generateOffer, or a run that keeps rolling Yen could coast
+   past the pity threshold without it ever firing. Mirrors exactly what
+   generateOffer does on a non-Rare+ offer -- the common case -- so the
+   two code paths stay in the same units (reward-granting nodes since a
+   Rare+ was last seen). economy.js forces the offer branch once this
+   would already be at threshold, so pity still always pays off within
+   4 reward nodes; see economy.js's `decideCombatRewardKind`. */
+export function skipOfferForPity(runState) {
+  runState.nodesSinceRare += 1;
 }
 
 export function ownedFragmentEntries(runState) {

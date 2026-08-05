@@ -100,6 +100,17 @@ export const ENCOUNTERS = {
   budogaoka_park_elite: {
     id: 'budogaoka_park_elite', label: 'ANGELO', winCondition: 'killAll',
     waves: [{ types: ['angelo', 'morioh_thug'] }]
+  },
+  /* Phase 8 deliverable 1: the map generator needs more than one Combat
+     shape to draw from across 7-9 interior rows -- both entries are pure
+     data over the same three Phase-5 enemies, no new engine path. */
+  morioh_alley_scuffle: {
+    id: 'morioh_alley_scuffle', label: 'ALLEYWAY SCUFFLE', winCondition: 'killAll',
+    waves: [{ generate: { budget: 3, pool: ['morioh_thug', 'knife_thug'] } }]
+  },
+  kameyu_loading_dock: {
+    id: 'kameyu_loading_dock', label: 'LOADING DOCK', winCondition: 'killAll',
+    waves: [{ generate: { budget: 6, pool: ['morioh_thug', 'knife_thug', 'brute'] } }]
   }
 };
 
@@ -166,24 +177,36 @@ export const EVENTS = {
       { label: 'PET IT', kind: 'fragment', flavor: 'The cat purrs static. Something in your Stand feels sharper.' },
       { label: 'WALK AWAY', kind: 'heal', amount: 12, flavor: 'Nothing happens. You catch your breath instead.' }
     ]
+  },
+  /* Phase 8: a map with 2-3 Bizarre Encounter nodes per run needs more
+     than one event so they don't all read as the same cat. */
+  vending_machine: {
+    title: 'BIZARRE ENCOUNTER',
+    text: 'A vending machine hums a tune that was never recorded. It takes no coins, only intent.',
+    choices: [
+      { label: 'FEED IT INTENT', kind: 'fragment', flavor: 'Something drops. It was never in the machine to begin with.' },
+      { label: 'UNPLUG IT', kind: 'heal', amount: 12, flavor: 'The hum stops. You feel steadier for it.' }
+    ]
+  },
+  rokakaka_stand: {
+    title: 'BIZARRE ENCOUNTER',
+    text: 'A fruit stand sells something that looks like a durian but definitely isn’t.',
+    choices: [
+      { label: 'TASTE IT', kind: 'fragment', flavor: 'The world resets by exactly one wrong decision. Yours, apparently.' },
+      { label: 'WALK ON', kind: 'heal', amount: 12, flavor: 'Morioh stays quiet. You keep walking.' }
+    ]
   }
 };
 
-/* Act 1 — Morioh streets (Diamond is Unbreakable), §3. 6 nodes, prototype
-   scope per §15 step 1. */
+/* Act 1 — Morioh streets (Diamond is Unbreakable), §3. As of Phase 8 this
+   is just the act's identity/flavour; the node graph itself is generated
+   per seed by map_gen.js/map_data.js, never authored here. */
 export const ACT1_MORIOH = {
-  id: 'morioh', name: 'MORIOH — DIAMOND IS UNBREAKABLE',
-  nodes: [
-    { id: 'n1', type: 'combat', enemy: 'morioh_thug', label: 'BACK ALLEY' },
-    { id: 'n2', type: 'event', event: 'stray_cat', label: 'A QUIET STREET' },
-    { id: 'n3', type: 'combat', encounter: 'morioh_shopping_street', label: 'SHOPPING STREET' },
-    { id: 'n4', type: 'rest', label: 'CAFE DEUX MAGOTS' },
-    { id: 'n5', type: 'elite', encounter: 'budogaoka_park_elite', label: 'BUDOGAOKA PARK' },
-    { id: 'n6', type: 'boss', boss: 'killer_queen', label: 'KAMEYU DEPARTMENT STORE' }
-  ]
+  id: 'morioh', name: 'MORIOH — DIAMOND IS UNBREAKABLE'
 };
 
 export const NODE_ICON_COLOR = {
   combat: PAL.lred, elite: PAL.yellow, event: PAL.lcyan,
-  rest: PAL.lgreen, boss: PAL.lmagenta, treasure: PAL.yellow
+  rest: PAL.lgreen, boss: PAL.lmagenta, treasure: PAL.yellow,
+  shop: PAL.lgreen, archive: PAL.dgray
 };

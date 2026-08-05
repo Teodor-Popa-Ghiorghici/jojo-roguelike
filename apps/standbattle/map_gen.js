@@ -1,0 +1,130 @@
+/* Act I map generator — Phase 8 deliverable 1. Draws only from
+   `rng.stream('map')` (rng.js's independent-by-name streams), once per
+   run at creation time, never lazily as the player walks the graph, so
+   the whole map can render (including unvisited branches) from the
+   start. Two-layer retry per §1 of the phase plan: a bounded resample
+   loop first, a deterministic repair floor if that's exhausted -- the
+   same shape as encounter_budget.js's own fairness-floor repair pass. */
+
+import {
+  LANES, MAX_ATTEMPTS, INTERIOR_TYPES, LEAN_BY_PATH_COUNT, weightOf,
+  ROWS_MIN, ROWS_MAX, PATH_COUNT_MIN, PATH_COUNT_MAX, ACT1_CONSTRAINTS,
+  COMBAT_POOL, ELITE_POOL, EVENT_POOL
+} from './map_data.js';
+import { checkAll, repairToFit } from './map_constraints.js';
+import { ENEMIES, ENCOUNTERS } from './data.js';
+
+function nodeId(row, lane) { return `r${row}_${lane}`; }
+
+function generateTopology(rng, rows, pathCount) {
+  const nodes = {};
+  const edgeSet = new Set();
+  const edges = [];
+  const paths = [];
+
+  function ensureNode(row, lane) {
+    const id = nodeId(row, lane);
+    if (!nodes[id]) {
+      nodes[id] = { id, row, lane, type: row === 0 ? 'combat' : row === rows - 1 ? 'boss' : null, firstPathLean: null };
+    }
+    return nodes[id];
+  }
+  function addEdge(a, b) {
+    const key = a + '>' + b;
+    if (!edgeSet.has(key)) { edgeSet.add(key); edges.push([a, b]); }
+  }
+
+  const leans = LEAN_BY_PATH_COUNT[pathCount];
+  for (let p = 0; p < pathCount; p++) {
+    const lean = leans[p];
+    const path = [nodeId(0, 0)];
+    ensureNode(0, 0);
+    let lane = rng.int(0, LANES - 1);
+    for (let row = 1; row <= rows - 2; row++) {
+      if (row > 1) lane = Math.max(0, Math.min(LANES - 1, lane + rng.int(-1, 1)));
+      const node = ensureNode(row, lane);
+      if (node.firstPathLean == null) node.firstPathLean = lean;
+      path.push(node.id);
+    }
+    ensureNode(rows - 1, 0);
+    path.push(nodeId(rows - 1, 0));
+    for (let i = 0; i < path.length - 1; i++) addEdge(path[i], path[i + 1]);
+    paths.push(path);
+  }
+
+  return { rows, nodes, edges, paths };
+}
+
+function assignTypes(rng, graph) {
+  Object.values(graph.nodes).forEach(node => {
+    if (node.type) return; // row 0 / boss row already fixed
+    const lean = node.firstPathLean || 'safe';
+    const weights = INTERIOR_TYPES.map(t => weightOf(t, lean));
+    const total = weights.reduce((a, b) => a + b, 0);
+    let roll = rng.random() * total;
+    let type = INTERIOR_TYPES[INTERIOR_TYPES.length - 1];
+    for (let i = 0; i < INTERIOR_TYPES.length; i++) {
+      roll -= weights[i];
+      if (roll <= 0) { type = INTERIOR_TYPES[i]; break; }
+    }
+    node.type = type;
+  });
+}
+
+function labelForCombat(node) {
+  if (node.encounter) return ENCOUNTERS[node.encounter].label;
+  if (node.enemy) return ENEMIES[node.enemy].name;
+  return 'FIGHT';
+}
+
+/* Picks *what* each typed node actually is (which encounter/enemy/event
+   id), always after types are final (post-repair) so a repaired node
+   gets real content instead of stale leftovers from before its type
+   changed. */
+function assignContent(rng, graph) {
+  Object.values(graph.nodes).forEach(node => {
+    if (node.row === 0) { node.enemy = 'morioh_thug'; node.label = 'BACK ALLEY'; return; }
+    if (node.row === graph.rows - 1) { node.boss = 'killer_queen'; node.label = 'KAMEYU DEPARTMENT STORE'; return; }
+    if (node.type === 'combat') { Object.assign(node, rng.pick(COMBAT_POOL)); node.label = labelForCombat(node); }
+    else if (node.type === 'elite') { Object.assign(node, rng.pick(ELITE_POOL)); node.label = 'ELITE: ' + labelForCombat(node); }
+    else if (node.type === 'event') { node.event = rng.pick(EVENT_POOL); node.label = 'BIZARRE ENCOUNTER'; }
+    else if (node.type === 'rest') { node.label = 'CAFE DEUX MAGOTS'; }
+    else if (node.type === 'shop') { node.label = 'OWSON'; }
+    else if (node.type === 'treasure') { node.label = 'TREASURE'; }
+    else if (node.type === 'archive') { node.label = 'ARCHIVE'; }
+  });
+}
+
+function finalize(graph, pathCount) {
+  graph.pathCount = pathCount;
+  graph.leans = LEAN_BY_PATH_COUNT[pathCount];
+  return graph;
+}
+
+/* `graph.attempts` (0 = first try passed) and `graph.repaired` are the
+   numbers map_check.js/sweep.js report the retry distribution from. */
+export function generateAct1Map(rng) {
+  let attemptGraph = null, pathCount = PATH_COUNT_MIN;
+  let attempt = 0;
+  for (; attempt < MAX_ATTEMPTS; attempt++) {
+    const rows = rng.int(ROWS_MIN, ROWS_MAX);
+    pathCount = rng.int(PATH_COUNT_MIN, PATH_COUNT_MAX);
+    const graph = generateTopology(rng, rows, pathCount);
+    assignTypes(rng, graph);
+    attemptGraph = graph;
+    if (checkAll(graph, ACT1_CONSTRAINTS).pass) {
+      graph.attempts = attempt;
+      graph.repaired = false;
+      assignContent(rng, graph);
+      return finalize(graph, pathCount);
+    }
+  }
+  const { pass } = repairToFit(attemptGraph, ACT1_CONSTRAINTS);
+  if (!pass) {
+    throw new Error('[map_gen] Act I map failed its fairness constraints even after the deterministic repair floor -- structurally unreachable, treat as a generator bug.');
+  }
+  attemptGraph.attempts = attempt;
+  attemptGraph.repaired = true;
+  assignContent(rng, attemptGraph);
+  return finalize(attemptGraph, pathCount);
+}

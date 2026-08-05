@@ -1,13 +1,15 @@
 /* npm run assert -- wraps the fairness assertions that already exist as
    standalone check modules (fairness_check.js's telegraph floor,
    encounter_check.js's composition rules, fragment_check.js's
-   pity/starvation/convergence weighting) into one summary. Prints at most
-   20 lines on success, only the failing items on failure. --verbose prints
-   every individual assertion. */
+   pity/starvation/convergence weighting, map_check.js's map-generator
+   constraints/retry-distribution/pity-integration) into one summary.
+   Prints at most 20 lines on success, only the failing items on
+   failure. --verbose prints every individual assertion. */
 
 import { checkTelegraphFairness } from '../fairness_check.js';
 import { runEncounterChecks } from '../encounter_check.js';
 import { runFragmentChecks } from '../fragment_check.js';
+import { runMapChecks } from '../map_check.js';
 
 const verbose = process.argv.includes('--verbose');
 
@@ -36,6 +38,13 @@ const groups = [];
     name: 'fragment offer weighting (pity/starvation/convergence)',
     pass: offerChecks.every(c => c.ok),
     items: offerChecks.map(c => ({ label: c.label, ok: c.ok }))
+  });
+}
+{
+  const { pass, checks } = runMapChecks(500);
+  groups.push({
+    name: 'map generator (constraints/retry distribution/pity integration)', pass,
+    items: checks.map(c => ({ label: c.label + (c.detail ? ` (${c.detail})` : ''), ok: c.ok }))
   });
 }
 

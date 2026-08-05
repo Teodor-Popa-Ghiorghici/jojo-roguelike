@@ -1,15 +1,21 @@
 /* Stand Battle Arena — app entry. Ties data/combat/render/map together
-   behind the TempleOS app contract (mount/unmount, ctx-only I/O). */
+   behind the TempleOS app contract (mount/unmount, ctx-only I/O). Node-
+   resolution/transition logic lives in run_flow.js (Phase 8) so this
+   file stays the thin mount/unmount + render-dispatch + click-dispatch
+   shell the app contract expects. */
 
-import { ACT1_MORIOH, ENEMIES, ENCOUNTERS, BOSS_KILLER_QUEEN, MODIFIERS, EVENTS, STANDS, PAL } from './data.js';
-import { createCombat } from './combat.js';
 import { drawCombat } from './render.js';
-import { drawMap, pickNode, drawEvent, pickChoice, drawRest, pickRestContinue } from './map.js';
+import { drawMap, pickNode, drawEvent, pickChoice } from './map.js';
+import { drawRest, restChoices, pickRestChoice } from './rest.js';
+import { drawShop, pickShopAction } from './shop.js';
+import { drawArchiveStub, pickArchiveContinue } from './archive_stub.js';
 import { drawReward, pickRewardChoice } from './rewards.js';
-import { createRunFragmentState, generateOffer, applyOffer, ownedFragmentEntries } from './fragment_offers.js';
-import { createStatPipeline, resolveUpgradeSlotCount } from './stats.js';
 import { drawTitle, drawComplete } from './scenes.js';
-import { wireCombatAudio, sfxVictory, sfxDefeat, sfxActComplete } from './audio.js';
+import {
+  createFreshRunState, resolveNodeEntry, commitNode, onCombatWin, finishRunLoss,
+  applyRewardChoice, applyEventChoice, applyRestChoice, applyShopAction, persistRun
+} from './run_flow.js';
+import { sfxVictory, sfxDefeat } from './audio.js';
 import { musicStart, musicSetIntensity, musicStop } from './music.js';
 import { createSaveStore } from './save.js';
 import { createRng } from './rng.js';
@@ -30,26 +36,21 @@ export default {
     const meta = await saveStore.loadMeta();
     const savedRun = await saveStore.loadRun();
 
-    const state = { scene: 'title', runState: null, runRng: null, combat: null, currentEvent: null, currentOffer: null };
+    const state = {
+      scene: 'title', runState: null, runRng: null, combat: null,
+      currentEvent: null, currentOffer: null, shop: null,
+      enteringNodeId: null, combatStartTsec: 0
+    };
     let shakeEnabled = meta.shakeEnabled !== false;
     const cleared = !!meta.cleared;
     const input = createInputSystem(meta.keymap);
+    let debugEnabled = false;
+    const env = { ctx, saveStore, meta, tsec: 0, shakeEnabled, debugEnabled };
 
-    /* Developmental Potential (spec §2.1) -> how many Fragment level-ups
-       (beyond each one's free first copy) the whole run's build can spend
-       -- stats.js's resolveUpgradeSlotCount, reserved since Phase 3,
-       consumed for real starting Phase 7. Only one Stand exists today, so
-       this is always Star Platinum's own devPotential (3), computed
-       through the real resolver rather than a duplicated literal. */
-    function defaultUpgradePoints() {
-      return resolveUpgradeSlotCount({ stand: STANDS.star_platinum }, createStatPipeline());
-    }
-
-    if (savedRun && savedRun.nodeIndex < ACT1_MORIOH.nodes.length) {
+    if (savedRun && savedRun.graph && savedRun.graph.nodes[savedRun.nodeId]) {
       /* Resuming mid-run loses at most the node in progress -- combat
          state itself is never persisted, only the map-scene checkpoint. */
       state.runState = savedRun;
-      if (state.runState.upgradePoints == null) state.runState.upgradePoints = defaultUpgradePoints(); // save.js's v1->v2 migration sentinel
       state.runRng = createRng(savedRun.seed);
       state.scene = 'map';
     }
@@ -97,6 +98,7 @@ export default {
     shakeBtn.addEventListener('mousedown', ev => {
       ev.stopPropagation();
       shakeEnabled = !shakeEnabled;
+      env.shakeEnabled = shakeEnabled;
       if (state.combat) state.combat.juice.setShakeEnabled(shakeEnabled);
       meta.shakeEnabled = shakeEnabled;
       saveStore.saveMeta(meta);
@@ -106,91 +108,23 @@ export default {
 
     /* Debug overlay toggle (tech §2.4/§2.5 deliverable 8): hitboxes,
        hurtboxes, current frame, active windows, poise, i-frames. */
-    let debugEnabled = false;
     function updateDebugBtn() { debugBtn.textContent = 'DEBUG: ' + (debugEnabled ? 'ON' : 'OFF'); }
     updateDebugBtn();
     debugBtn.addEventListener('mousedown', ev => {
       ev.stopPropagation();
       debugEnabled = !debugEnabled;
+      env.debugEnabled = debugEnabled;
       if (state.combat) state.combat.debug = debugEnabled;
       updateDebugBtn();
       if (window.Snd) window.Snd.click();
     });
 
-    function persistRun() { saveStore.saveRun(state.runState); }
-
     function newRun() {
       const seed = Date.now() + '-' + Math.floor(Math.random() * 1e9);
       state.runRng = createRng(seed);
-      const fragState = createRunFragmentState();
-      fragState.upgradePoints = defaultUpgradePoints();
-      state.runState = { seed, hp: 100, maxHp: 100, nodeIndex: 0, ...fragState };
+      state.runState = createFreshRunState(seed, state.runRng);
       state.scene = 'map';
-      persistRun();
-    }
-
-    function startCombatForNode(node) {
-      const opts = { shakeEnabled };
-      let target;
-      if (node.type === 'boss') { target = BOSS_KILLER_QUEEN; }
-      else if (node.encounter) { target = ENCOUNTERS[node.encounter]; }
-      else {
-        target = ENEMIES[node.enemy];
-        if (node.modifier) {
-          const m = MODIFIERS[node.modifier];
-          opts.speedMult = m.speedMult; opts.hpMult = m.hpMult; opts.tint = m.tint;
-        }
-      }
-      const owned = ownedFragmentEntries(state.runState)
-        .filter(e => e.owned)
-        .map(e => ({ id: e.owned.id, level: e.owned.level }));
-      const combat = createCombat(target, owned, opts, state.runRng);
-      combat.player.hp = state.runState.hp;
-      combat.player.maxHp = state.runState.maxHp;
-      combat.debug = debugEnabled;
-      wireCombatAudio(combat);
-      musicSetIntensity(1);
-      state.combat = combat;
-      state.scene = 'combat';
-    }
-
-    function resolveNodeEntry() {
-      const node = ACT1_MORIOH.nodes[state.runState.nodeIndex];
-      if (node.type === 'event') { state.currentEvent = EVENTS[node.event]; state.scene = 'event'; }
-      else if (node.type === 'rest') { state.scene = 'rest'; }
-      else startCombatForNode(node);
-    }
-
-    /* GDD §6.1 deliverable 2's offer flow: 3 choices, each pre-assigned to
-       a slot. Fires after clearing any combat/elite/boss node and from
-       the stray-cat event's 'fragment' choice -- both routes converge
-       here so there is exactly one offer/pick code path. */
-    function enterReward() {
-      state.currentOffer = generateOffer(state.runRng.stream('rewards'), state.runState);
-      state.scene = 'reward';
-      persistRun();
-    }
-
-    function advanceNode() {
-      state.runState.nodeIndex++;
-      state.scene = state.runState.nodeIndex >= ACT1_MORIOH.nodes.length ? 'complete' : 'map';
-      musicSetIntensity(0);
-      if (state.scene === 'complete') {
-        meta.cleared = true;
-        saveStore.saveMeta(meta);
-        saveStore.clearRun();
-        sfxActComplete();
-      } else {
-        persistRun();
-      }
-    }
-
-    function applyEventChoice(idx) {
-      const choice = state.currentEvent.choices[idx];
-      if (window.Snd) window.Snd.chirp();
-      if (choice.kind === 'fragment') { enterReward(); return; }
-      state.runState.hp = Math.min(state.runState.maxHp, state.runState.hp + choice.amount);
-      advanceNode();
+      persistRun(state, env);
     }
 
     function canvasXY(ev) {
@@ -202,35 +136,26 @@ export default {
       const { mx, my } = canvasXY(ev);
       if (state.scene === 'title') { newRun(); if (window.Snd) window.Snd.open(); }
       else if (state.scene === 'map') {
-        if (pickNode(mx, my, ACT1_MORIOH.nodes, W, H, state.runState) >= 0) {
-          resolveNodeEntry();
-          if (window.Snd) window.Snd.select();
-        }
+        const id = pickNode(mx, my, state.runState.graph, state.runState, W);
+        if (id) { resolveNodeEntry(state, id, env); if (window.Snd) window.Snd.select(); }
       } else if (state.scene === 'event') {
         const idx = pickChoice(mx, my, state.currentEvent, W, H);
-        if (idx >= 0) applyEventChoice(idx);
+        if (idx >= 0) { if (window.Snd) window.Snd.chirp(); applyEventChoice(state, idx, env); }
       } else if (state.scene === 'rest') {
-        if (pickRestContinue(mx, my, W, H)) {
-          state.runState.hp = state.runState.maxHp;
-          if (window.Snd) window.Snd.ok();
-          advanceNode();
-        }
+        const choices = restChoices(state.runState);
+        const idx = pickRestChoice(mx, my, choices, W, H);
+        if (idx >= 0) { if (window.Snd) window.Snd.ok(); applyRestChoice(state, choices[idx].id, env); }
+      } else if (state.scene === 'shop') {
+        const action = pickShopAction(mx, my, state.runState, state.shop, W, H);
+        if (action) { if (window.Snd) window.Snd.select(); applyShopAction(state, action, env); }
+      } else if (state.scene === 'archive') {
+        if (pickArchiveContinue(mx, my, W, H)) { if (window.Snd) window.Snd.ok(); commitNode(state, env); }
       } else if (state.scene === 'combat' && state.combat.outcome !== 'fighting') {
-        if (state.combat.outcome === 'win') {
-          state.runState.hp = state.combat.player.hp;
-          enterReward();
-        } else {
-          saveStore.clearRun();
-          state.scene = 'title';
-        }
+        if (state.combat.outcome === 'win') onCombatWin(state, env);
+        else finishRunLoss(state, env);
       } else if (state.scene === 'reward') {
         const idx = pickRewardChoice(mx, my, state.currentOffer, W);
-        if (idx >= 0) {
-          applyOffer(state.runState, state.currentOffer[idx]);
-          state.currentOffer = null;
-          if (window.Snd) window.Snd.select();
-          advanceNode();
-        }
+        if (idx >= 0) { if (window.Snd) window.Snd.select(); applyRewardChoice(state, idx, env); }
       } else if (state.scene === 'complete') {
         state.scene = 'title';
       }
@@ -255,6 +180,7 @@ export default {
       const dt = Math.min(50, now - t0);
       t0 = now;
       tsec += dt / 1000;
+      env.tsec = tsec;
       if (state.scene === 'combat') {
         const c = state.combat;
         c.update(dt);
@@ -266,12 +192,14 @@ export default {
           musicSetIntensity(0);
           if (c.outcome === 'win') sfxVictory(); else sfxDefeat();
         }
-        drawCombat(g, W, H, c, tsec, dt, ACT1_MORIOH.nodes[state.runState.nodeIndex].id);
+        drawCombat(g, W, H, c, tsec, dt, state.enteringNodeId);
       }
-      else if (state.scene === 'map') drawMap(g, W, H, ACT1_MORIOH.nodes, state.runState, tsec);
+      else if (state.scene === 'map') drawMap(g, W, H, state.runState.graph, state.runState, tsec);
       else if (state.scene === 'reward') drawReward(g, W, H, state.currentOffer, state.runState, tsec);
       else if (state.scene === 'event') drawEvent(g, W, H, state.currentEvent, tsec);
-      else if (state.scene === 'rest') drawRest(g, W, H, state.runState, tsec);
+      else if (state.scene === 'rest') drawRest(g, W, H, state.runState, restChoices(state.runState), tsec);
+      else if (state.scene === 'shop') drawShop(g, W, H, state.runState, state.shop, tsec);
+      else if (state.scene === 'archive') drawArchiveStub(g, W, H, tsec);
       else if (state.scene === 'title') drawTitle(g, W, H, tsec, cleared);
       else if (state.scene === 'complete') drawComplete(g, W, H, state.runState, tsec);
       info.textContent = state.scene === 'combat'
