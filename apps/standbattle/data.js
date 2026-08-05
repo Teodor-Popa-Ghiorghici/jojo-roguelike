@@ -18,6 +18,7 @@ export const STANDS = {
     character: 'Jotaro Kujo',
     standName: 'Star Platinum',
     role: 'brawler',
+    controlScheme: 'close', // GDD §3.4 (Phase 9a) -- Stand Class as a data field, stand_classes.js's CONTROL_SCHEMES
     source: 'Stardust Crusaders (Part 3)',
     stats: { power: 8, speed: 7, range: 2, persistence: 6, precision: 6, devPotential: 3 },
     moves: { light: 'sp_light', medium: 'sp_medium', heavy: 'sp_heavy', special: 'sp_barrage' },
@@ -78,6 +79,33 @@ export const ENEMIES = {
     hp: 95, power: 8, speedPx: 96, precision: 5, poise: 60,
     attackPatterns: ['telegraphed_slam'],
     profile: 'turtle', cost: 4, clashable: true, tint: PAL.brown
+  },
+  /* Hound (GDD §4.2 #7, Phase 9a): a Stand-beast flanker -- the designed
+     counterplay to a rooted/exposed User (Close's held Project, Long-
+     Range's permanently separated second body). `ignoresToken` (read by
+     token.js/combat_enemy.js) means it's never gated by the crowd's
+     attack-token pool; `userTargetWeightMult` (combat_stand.js's
+     resolveTarget) heavily -- not absolutely -- biases the aggro-weighted
+     target split toward the User whenever both hurtboxes are hit. */
+  hound: {
+    id: 'hound', name: 'HOUND', shortName: 'HOUND', baseType: 'melee',
+    hp: 30, power: 6, speedPx: 210, precision: 5, poise: 16,
+    attackPatterns: ['quick_stab'],
+    profile: 'aggressor', cost: 2, clashable: true, tint: PAL.lmagenta,
+    ignoresToken: true, userTargetWeightMult: 20
+  },
+  /* Warden (GDD §4.2 #12, Phase 9a): anti-Project -- `detachedStandPunishMult`
+     is read directly by resolvers.js's resolveDamage while its target's
+     Stand is detached (the generic `standDetached` flag every Stand Class
+     sets each frame, stand_classes.js: Close's held Project, Mid's flick,
+     or Long-Range's permanent detachment), the counter to holding Project
+     or kiting behind a detached Stand. */
+  warden: {
+    id: 'warden', name: 'WARDEN', shortName: 'WARDEN', baseType: 'melee',
+    hp: 70, power: 7, speedPx: 110, precision: 5, poise: 46,
+    attackPatterns: ['telegraphed_slam'],
+    profile: 'turtle', cost: 3, clashable: true, tint: PAL.blue,
+    detachedStandPunishMult: 1.7
   }
 };
 

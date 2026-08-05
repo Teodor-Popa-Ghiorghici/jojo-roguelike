@@ -69,7 +69,8 @@ export function stepTokens(tokenSystem, enemies, player, aiRng) {
       return;
     }
     if (slot.cooldownFrames > 0) { slot.cooldownFrames--; return; }
-    const candidates = alive.filter(e => !e.hasToken && poolOf(e) === slot.pool && e.ai.state !== 'staggered');
+    // GDD §4.2 Hound (#7): "ignores attack tokens" -- never competes for or holds a slot
+    const candidates = alive.filter(e => !e.hasToken && !e.def.ignoresToken && poolOf(e) === slot.pool && e.ai.state !== 'staggered');
     if (!candidates.length) return;
     const chosen = weightedPick(candidates, player, aiRng);
     chosen.hasToken = true;

@@ -23,12 +23,14 @@ import { applyPoiseDamage } from './poise.js';
 import { applyStatus } from './status.js';
 import { resolveStatusPotency } from './stats.js';
 import * as defense from './defense.js';
-import { ARENA_MIN, ARENA_MAX, ARENA_Z_MIN, ARENA_Z_MAX, SIM_HZ, DEATH_ANIM_FRAMES } from './constants.js';
+import { CONTROL_SCHEMES } from './stand_classes.js';
+import {
+  ARENA_MIN, ARENA_MAX, ARENA_Z_MIN, ARENA_Z_MAX, DEATH_ANIM_FRAMES, PLAYER_SPEED_PER_FRAME
+} from './constants.js';
 
 export const ACTION_KEYS = new Set(['light', 'medium', 'heavy', 'special', 'rush', 'dodge', 'parry']);
 
 const HURT_FLASH_FRAMES = 9; // 150ms fade
-export const PLAYER_SPEED_PER_FRAME = 172 / SIM_HZ; // exported: combat_stand.js's Strain drag is 40% of this (GDD §3.2)
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
@@ -244,23 +246,13 @@ export function updatePlayer(combat) {
 
   if (player.state === 'idle') {
     if (keys.guard) { defense.startGuard(player); return; }
-    /* GDD §3.4: "the User is rooted" while the Stand is Projected -- input
-       is still read every frame by combat_stand.js's stepStand (it drives
-       the Stand, not the User), so the User simply stops responding to its
-       own movement keys rather than gating them out at the input layer. */
-    if (player.projecting) { player.moving = false; return; }
-    let mv = 0, mz = 0;
-    if (keys.left) mv -= 1;
-    if (keys.right) mv += 1;
-    if (keys.forward) mz -= 1;
-    if (keys.back) mz += 1;
-    player.moving = mv !== 0 || mz !== 0;
-    /* getMoveSpeed (query, deliverable 6): the ported "+12% move speed"
-       run buff lives here now instead of a bespoke player.speedMult field. */
-    const speedMult = combat.dispatcher.runQuery('getMoveSpeed', 1, { entity: player });
-    const step = PLAYER_SPEED_PER_FRAME * speedMult;
-    player.x = clamp(player.x + mv * step, ARENA_MIN, ARENA_MAX);
-    player.z = clamp(player.z + mz * step, ARENA_Z_MIN, ARENA_Z_MAX);
+    /* Phase 9a: movement/AI is now per Stand Class (stand_classes.js) --
+       Close roots the User while Projected, Mid never roots it, Long
+       redirects these same axes to the Stand and drives the User by
+       retreat AI instead. `player.stand.controlScheme` is the data field
+       (GDD §3.4 deliverable 4: a table lookup, never a branch here). */
+    const scheme = CONTROL_SCHEMES[player.stand.controlScheme] || CONTROL_SCHEMES.close;
+    scheme.stepUser(combat, keys);
     return;
   }
 
