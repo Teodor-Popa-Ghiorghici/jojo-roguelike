@@ -29,6 +29,8 @@ export function initPoise(entity, def) {
    the flag lives in fighter.js's stub set, this is just its one reader. */
 function isArmoredNow(ai, enemy) {
   if (enemy && enemy.armorStripped) return false;
+  // Phase 9b Ironclad: armored through every pattern's windup, not just the ones authored with `armor: true`.
+  if (enemy && enemy.affixData && enemy.affixData.ironclad) return true;
   return ai.state === 'windup' && ai.pattern && ai.pattern.armor;
 }
 
@@ -57,6 +59,7 @@ export function stepPoise(enemy) {
   }
   if (enemy.poiseBroken && enemy.ai.state !== 'staggered') {
     if (isArmoredNow(enemy.ai, enemy)) return false; // firm, not unfair -- always paired with the mandatory telegraph
+    if (enemy.affixData && enemy.affixData.undying) { enemy.poiseBroken = false; enemy.poise.current = enemy.poise.max; return false; } // Phase 9b Undying
     if (!enemyIsVulnerableToStagger(enemy.ai)) return false;
     enterStagger(enemy.ai, STAGGER_FRAMES, STAGGER_DAMAGE_MULT);
     enemy.poiseBroken = false;

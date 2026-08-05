@@ -96,7 +96,7 @@ export function createCombat(enemyOrEncounterDef, ownedFragments, opts, rng) {
     tokenSystem: createTokenSystem(TOKEN_MELEE_COUNT, TOKEN_RANGED_COUNT),
     hazards: [], // GDD §4.6 Phase 2's "rule" (hazards.js) -- empty for every fight that never spawns one
     timeStopFrames: 0, // Phase 7 (GDD §6.1's The World donor) -- generic "the world pauses, the User doesn't" primitive
-    spawnOpts: { hpMult: opts.hpMult, speedMult: opts.speedMult, tint: opts.tint },
+    spawnOpts: { hpMult: opts.hpMult, speedMult: opts.speedMult, tint: opts.tint, isElite: opts.isElite, menaceRank: opts.menaceRank },
     outcome: 'fighting', banner: '', bannerTimer: 84, // 1400ms
     log: [], pushLog: push, debug: false
   };
@@ -107,8 +107,11 @@ export function createCombat(enemyOrEncounterDef, ownedFragments, opts, rng) {
 
   combat.enemy = combat.enemies[0];
   combat.isBoss = combat.enemies.length === 1 && !!combat.enemies[0].def.phases;
-  combat.banner = encounterDef.label ||
-    (combat.enemies.length === 1 ? (combat.enemies[0].def.name || combat.enemies[0].def.standName) : 'MULTIPLE HOSTILES');
+  /* Phase 9b: spawnWave already set combat.banner to an affix announcement
+     (GDD §4.3's visibility contract) when wave 0 rolled any -- this only
+     fills in the default label/name banner when it didn't. */
+  combat.banner = combat.banner ||
+    (encounterDef.label || (combat.enemies.length === 1 ? (combat.enemies[0].def.name || combat.enemies[0].def.standName) : 'MULTIPLE HOSTILES'));
 
   /* Edge-triggered: an action fires once per physical key-down, never on
      hold (tech audit item #1 -- dodge used to re-fire every frame it was
