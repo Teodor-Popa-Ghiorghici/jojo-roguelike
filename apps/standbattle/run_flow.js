@@ -21,6 +21,7 @@ import {
   generateOffer, applyOffer, ownedFragmentEntries, createRunFragmentState,
   skipOfferForPity, PITY_THRESHOLD
 } from './fragment_offers.js';
+import { generateTreasureOffer, applyTreasureChoice } from './item_offers.js';
 import { createStatPipeline, resolveUpgradeSlotCount } from './stats.js';
 import { pickUpgradeSlot } from './rest.js';
 import {
@@ -66,7 +67,9 @@ function tensionScaledEncounter(def, tension) {
 
 function startCombatForNode(state, env, node) {
   const rs = state.runState;
-  const opts = { shakeEnabled: env.shakeEnabled };
+  // Phase 10: every owned Relic/Duo/Disc rides into the fight the same
+  // way owned Fragments already did -- see combat.js's install block.
+  const opts = { shakeEnabled: env.shakeEnabled, relics: rs.relics, duos: rs.duosOwned, discs: rs.discsBySlot };
   let target;
   if (node.type === 'boss') { target = BOSS_KILLER_QUEEN; }
   else if (node.encounter) { target = tensionScaledEncounter(ENCOUNTERS[node.encounter], rs.tension); }
@@ -114,13 +117,27 @@ export function enterReward(state, env, forceRarePity) {
   persistRun(state, env);
 }
 
+/* Phase 10: resolves the Phase 8-flagged gap ("Rest/Treasure Relic
+   options are Fragment offers -- no owned-Relic system exists yet").
+   Treasure nodes now offer a real Relic or Disc (item_offers.js), reusing
+   the exact same reward scene/currentOffer/applyRewardChoice path
+   Fragment/Duo offers already use -- candidates just carry `kind: 'relic'
+   | 'disc'` instead of `'fragment' | 'duo'`. */
+function enterTreasureReward(state, env) {
+  const rs = state.runState;
+  const offer = generateTreasureOffer(state.runRng.stream('rewards'), rs);
+  state.currentOffer = offer;
+  state.scene = 'reward';
+  persistRun(state, env);
+}
+
 export function resolveNodeEntry(state, targetId, env) {
   state.enteringNodeId = targetId;
   const node = state.runState.graph.nodes[targetId];
   if (node.type === 'event') { state.currentEvent = EVENTS[node.event]; state.scene = 'event'; }
   else if (node.type === 'rest') { state.scene = 'rest'; }
   else if (node.type === 'shop') { enterShop(state, env); }
-  else if (node.type === 'treasure') { enterReward(state, env, false); }
+  else if (node.type === 'treasure') { enterTreasureReward(state, env); }
   else if (node.type === 'archive') { state.scene = 'archive'; }
   else startCombatForNode(state, env, node);
 }
@@ -182,9 +199,21 @@ export function onCombatWin(state, env) {
   }
 }
 
+/* Phase 10: `kind` picks apply function AND which field holds the taken
+   id -- fragment/duo offers (combat reward, Treasure was this too before
+   Phase 10) vs. relic/disc offers (Treasure now, item_offers.js). */
 export function applyRewardChoice(state, idx, env) {
-  applyOffer(state.runState, state.currentOffer[idx]);
-  recordTaken(state.runState.telemetry, state.currentOffer[idx].frag.id);
+  const cand = state.currentOffer[idx];
+  const rs = state.runState;
+  let takenId;
+  if (cand.kind === 'relic' || cand.kind === 'disc') {
+    applyTreasureChoice(rs, cand);
+    takenId = cand.kind === 'relic' ? cand.relic.id : cand.disc.id;
+  } else {
+    applyOffer(rs, cand);
+    takenId = cand.kind === 'duo' ? cand.duo.id : cand.frag.id;
+  }
+  recordTaken(rs.telemetry, takenId);
   state.currentOffer = null;
   commitNode(state, env);
 }

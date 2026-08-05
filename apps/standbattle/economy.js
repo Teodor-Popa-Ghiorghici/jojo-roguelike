@@ -2,7 +2,7 @@
    functions over `runState.yen`/`runState.rerollsUsed`/
    `runState.removalsUsed`; no combat/sim state touched. */
 
-import { PITY_THRESHOLD } from './fragment_offers.js';
+import { PITY_THRESHOLD, resolveOwnedEconomyMods } from './fragment_offers.js';
 
 const COMBAT_YEN_MIN = 60, COMBAT_YEN_MAX = 140;
 const ELITE_YEN_MIN = 80, ELITE_YEN_MAX = 160;
@@ -11,6 +11,8 @@ const REMOVAL_BASE = 75, REMOVAL_STEP = 25; // GDD §6.5: "75¥, escalating"
 const REROLL_BASE = 50, REROLL_STEP = 15;   // GDD §6.5: "50¥, escalating"
 const HEAL_YEN_PER_HP = 2;
 const FRAGMENT_PRICE = { common: 150, rare: 250, epic: 350, legendary: 400 };
+const RELIC_PRICE = { common: 250, rare: 350, epic: 450, legendary: 500 }; // GDD §6.3: "250-500"
+const DISC_PRICE = 300; // Phase 10 -- Discs have no rarity tiers, one flat price (GDD §6.4 gives none)
 
 /* 'offer' or 'yen'. Forced to 'offer' once pity is already armed --
    otherwise a run that keeps rolling Yen could coast past the pity
@@ -27,7 +29,17 @@ export function rollEliteYenBonus(rng) { return Math.round(rng.range(ELITE_YEN_M
 export function fragmentPrice(rarity) { return FRAGMENT_PRICE[rarity] || FRAGMENT_PRICE.common; }
 export function healCost(missingHp) { return Math.max(0, Math.ceil(missingHp * HEAL_YEN_PER_HP)); }
 export function removalCost(runState) { return REMOVAL_BASE + REMOVAL_STEP * (runState.removalsUsed || 0); }
-export function rerollCost(runState) { return REROLL_BASE + REROLL_STEP * (runState.rerollsUsed || 0); }
+/* Phase 10 (Hermit Purple donor's economy identity, GDD §6.1): an owned
+   Fragment's `economyMods.rerollDiscountPct` shaves a flat percent off
+   before the escalating-per-reroll base, resolved generically off
+   runState -- see fragment_offers.js's resolveOwnedEconomyMods. */
+export function rerollCost(runState) {
+  const base = REROLL_BASE + REROLL_STEP * (runState.rerollsUsed || 0);
+  const discount = resolveOwnedEconomyMods(runState).rerollDiscountPct || 0;
+  return Math.max(0, Math.round(base * (1 - discount)));
+}
+export function relicPrice(rarity) { return RELIC_PRICE[rarity] || RELIC_PRICE.common; }
+export function discPrice() { return DISC_PRICE; }
 
 export function canAfford(runState, cost) { return runState.yen >= cost; }
 export function spend(runState, cost) { runState.yen = Math.max(0, runState.yen - cost); }

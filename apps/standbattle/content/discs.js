@@ -21,7 +21,12 @@
    without a second sprite/animation set behind it.
 
    Also flagged: "dropped by Duel nodes and secret bosses" -- neither
-   exists yet. Sold through Owson (shop.js) instead, same stand-in Phase 8
-   used for Relics before Phase 10 gave them a real system. */
+   exists yet. Offered through Treasure nodes instead, alongside Relics
+   (item_offers.js's generateTreasureOffer), same stand-in role Phase 8
+   used Fragment offers for before Phase 10 gave Relics/Discs a real
+   system.
+
+   Schema (no donor/levelDesc -- Discs don't level): { id, name, slot,
+   desc, tags, tradeoff?, effects[], queries[] }. */
 
 export const DISCS = [];

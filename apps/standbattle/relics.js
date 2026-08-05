@@ -17,3 +17,9 @@ export const RELIC_LIST = [
 ];
 
 export const RELICS = Object.fromEntries(RELIC_LIST.map(r => [r.id, r]));
+
+/* Schema (tech §3's own Relic example, plus `desc` -- tech §3 didn't need
+   one since no reward-card UI existed yet to read it; rewards.js's
+   Treasure-offer card does now, the same role Fragments' `levelDesc`
+   plays): { id, name, rarity, desc, tags, tradeoff?, effects[], queries[] }.
+   No `donor`/`slot`/levels -- Relics are the one pool with neither. */
