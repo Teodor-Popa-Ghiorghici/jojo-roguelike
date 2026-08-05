@@ -80,7 +80,13 @@ export function drawDebugOverlay(g, W, H, combat, camX) {
 
   let y = 60;
   statLine(g, 4, y, 'P:' + player.state + (player.activeMove ? '/' + player.activeMove.id + '@' + player.moveFrame + '/' + player.activeMove.frames : ''), '#8FFF8F'); y += 8;
-  statLine(g, 4, y, 'iframes:' + (player.invulnerable ? 'ON' : 'off') + ' steps:' + player.dodgeCharges + ' guard:' + (player.guarding ? 'ON' : 'off'), '#8FFF8F'); y += 8;
+  statLine(g, 4, y, 'iframes:' + (player.invulnerable ? 'ON' : 'off') + ' steps:' + player.dodgeCharges + '/' + player.dodgeChargeMax + ' guard:' + (player.guarding ? 'ON' : 'off'), '#8FFF8F'); y += 8;
+  /* Phase 9a: per-class readout so Mid/Long can be verified against the
+     debug overlay without shipped content to select them in real play --
+     see phase-9a.md's testing method. */
+  statLine(g, 4, y, 'class:' + player.stand.controlScheme +
+    ' tether:' + Math.round(Math.hypot(combat.stand.x - player.x, combat.stand.z - player.z)) +
+    ' detached:' + (player.standDetached ? 'Y' : 'n'), '#8FFF8F'); y += 8;
 
   /* Phase 5: one hurtbox/hitbox/stat line per living enemy, plus the
      attack-token holder marker (GDD §16) -- this is the overlay's own

@@ -27,6 +27,7 @@ import { createJuice } from './juice.js';
 import { createFixedStepLoop } from './sim_loop.js';
 import { updatePlayer, performAction, ACTION_KEYS } from './combat_player.js';
 import { stepStand } from './combat_stand.js';
+import { CONTROL_SCHEMES } from './stand_classes.js';
 import { stepCrowd } from './combat_crowd.js';
 import { createEncounter, normalizeEncounter, stepEncounter } from './encounter.js';
 import { createTokenSystem } from './token.js';
@@ -64,6 +65,12 @@ export function createCombat(enemyOrEncounterDef, ownedFragments, opts, rng) {
   const player = createPlayerFighter(standDef, ARENA_MIN + 122);
   player.maxPersistence = dispatcher.runQuery('getMaxPersistence', player.maxPersistence, { entity: player });
   clampPersistence(player);
+  /* Stand Class (GDD §3.4, Phase 9a): `standDef.controlScheme` picks the
+     one CONTROL_SCHEMES entry that governs Step charges/damage/movement
+     for this whole fight -- stamped onto the entity once here rather than
+     re-resolved every frame, same pattern as maxPersistence above. */
+  player.dodgeChargeMax = (CONTROL_SCHEMES[standDef.controlScheme] || CONTROL_SCHEMES.close).dodgeChargeMax;
+  player.dodgeCharges = Math.min(player.dodgeCharges, player.dodgeChargeMax);
   /* The Stand (GDD §3.1, Phase 4) — a real second entity, not the render-
      only offset it was through Phase 3. Created right after the player so
      its owner link exists before anything (AI, render) can run a frame. */

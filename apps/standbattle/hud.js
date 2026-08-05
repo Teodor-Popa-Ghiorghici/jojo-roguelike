@@ -5,7 +5,6 @@
 import { px, poly, disc, line } from './draw.js';
 import { text, textWidth } from './font.js';
 import { FX, JOTARO, THUG, ANGELO, KQ, S, SH, BASE, LT, RIM } from './palette.js';
-import { DODGE_CHARGE_MAX } from './fighter.js';
 import { resolveTetherLength, resolveFeedbackRate } from './resolvers.js';
 
 const ghosts = new WeakMap();
@@ -160,7 +159,7 @@ export function drawHUD(g, W, H, combat, tsec) {
 
   /* dodge charges (§3.7): 2 pips so "holding to stay safe" has a visible
      cost again -- direct feedback for tech audit item #1's fix */
-  for (let i = 0; i < DODGE_CHARGE_MAX; i++) {
+  for (let i = 0; i < player.dodgeChargeMax; i++) {
     const on = i < player.dodgeCharges;
     px(g, 40 + i * 10, 50, 7, 5, on ? '#5FE0FF' : '#1A3040');
     px(g, 40 + i * 10, 50, 7, 2, on ? '#C8F8FF' : '#243C48');

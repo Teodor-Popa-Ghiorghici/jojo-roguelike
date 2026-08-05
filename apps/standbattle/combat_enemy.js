@@ -79,7 +79,8 @@ export function stepEnemyMovementAndAI(combat, enemy, aiRng) {
     if (dist > enemy.ai.approachRange) { enemy.x += dir * enemy.speedPxPerFrame; enemy.moving = true; }
   }
   const wasWindup = enemy.ai.state === 'windup';
-  const ev = stepEnemyAI(enemy.ai, dist, aiRng, enemy.hasToken);
+  // GDD §4.2 Hound (#7): "ignores attack tokens" -- always eligible to commit, never gated by the crowd's pool
+  const ev = stepEnemyAI(enemy.ai, dist, aiRng, enemy.hasToken || enemy.def.ignoresToken);
   if (!wasWindup && enemy.ai.state === 'windup') dispatcher.fire('onTelegraphStart', { pattern: enemy.ai.pattern });
   if (ev && ev.type === 'spawnMelee') {
     /* GDD §3.1/deliverable 5: the User and the Stand are separately
@@ -103,7 +104,7 @@ export function stepEnemyMovementAndAI(combat, enemy, aiRng) {
     if (pr.homing === undefined) pr.homing = pr.pattern.homing;
     if (pr.homing) pr.dir = player.x >= pr.x ? 1 : -1;
     pr.x += pr.dir * pr.speedPerFrame;
-    const target = pickAttackTargetPoint(combat, pr.x, pr.z, pr.pattern.tags, PROJECTILE_HIT_RADIUS, aiRng);
+    const target = pickAttackTargetPoint(combat, pr.x, pr.z, pr.pattern.tags, PROJECTILE_HIT_RADIUS, aiRng, enemy);
     if (target) {
       resolveIncomingAttack(combat, pr.pattern, pr.x, target, enemy);
       enemy.projectiles.splice(i, 1);

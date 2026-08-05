@@ -14,7 +14,7 @@
 
 import { gainPersistence, gainMomentum } from './resources.js';
 import { spawnHazard } from './hazards.js';
-import { applyDamage, DODGE_CHARGE_MAX } from './fighter.js';
+import { applyDamage } from './fighter.js';
 import { ARENA_MIN, ARENA_MAX, ARENA_Z_MIN, ARENA_Z_MAX } from './constants.js';
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -97,7 +97,7 @@ export const EFFECT_LIB = {
     if (data.moveId && (!ctx.move || ctx.move.id !== data.moveId)) return;
     const entity = ctx.entity || ctx.attacker;
     if (!entity) return;
-    entity.dodgeCharges = Math.min(DODGE_CHARGE_MAX, entity.dodgeCharges + (data.amount || 1));
+    entity.dodgeCharges = Math.min(entity.dodgeChargeMax, entity.dodgeCharges + (data.amount || 1));
   },
 
   /* onStepStart/onTetherStrain. Marks the nearest `count` living enemies

@@ -58,11 +58,13 @@ export function createPlayerFighter(stand, x, z) {
     state: 'idle', stateTimer: 0, activeMove: null, hitTargetsThisSwing: null,
     moveFrame: 0, hitboxSpent: null, chainCounts: {}, lastMoveId: null, armorConsumedThisMove: false, // tech §2.4
     invulnerable: false, hitIframeTimer: 0, parryWindow: false, parrySuccess: false, clashPhase: null, clashElapsed: 0,
-    dodgeCharges: DODGE_CHARGE_MAX, dodgeRechargeFrames: 0,
+    dodgeCharges: DODGE_CHARGE_MAX, dodgeChargeMax: DODGE_CHARGE_MAX, dodgeRechargeFrames: 0,
     guarding: false, breakActive: false,
     bufferedAction: null,
     squash: 0, hurtFlash: 0, comboCount: 0, moving: false,
     projecting: false, strained: false, // GDD §3.2/§3.4 (Phase 4) -- set every frame by combat_stand.js's stepStand
+    standDetached: false, // GDD §3.4 (Phase 9a) -- generic across all 3 classes; Warden's #12 hook (resolvers.js)
+    commandTargetX: null, commandTargetZ: null, prevCommandKey: false, // Long-Range's "command a reposition" order
     brain: null // the User is player-controlled, not AI-driven
   };
   return attachComponentStubs(entity);
@@ -85,7 +87,9 @@ export function createStandFighter(owner) {
     id: 'stand', kind: 'stand', owner,
     x: owner.x, z: owner.z, facing: owner.facing,
     breakActive: false, hurtFlash: 0,
-    staggerFrames: 0, wasProjecting: false
+    staggerFrames: 0, wasProjecting: false,
+    // Mid-Range's flick state (Phase 9a, stand_classes.js) -- unused fields for Close/Long
+    flicked: false, flickTimer: 0, flickTargetX: 0, flickTargetZ: 0, prevProjectKey: false
   };
   attachComponentStubs(entity);
   entity.standLink = { owner };

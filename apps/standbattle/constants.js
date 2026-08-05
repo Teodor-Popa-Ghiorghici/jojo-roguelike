@@ -15,6 +15,14 @@ export {
 export const SIM_HZ = 60;
 export const FRAME_MS = 1000 / SIM_HZ;
 
+/* The User's own walk speed (GDD §3.4/§3.2). Lives here rather than
+   combat_player.js so stand_classes.js (Phase 9a's control-scheme table)
+   can read it without importing combat_player.js -- that import would
+   round-trip back through combat_player.js -> resolvers.js and into a
+   cycle the moment resolvers.js needs CONTROL_SCHEMES for its own damage
+   lookup. combat_stand.js's Strain drag is 40% of this. */
+export const PLAYER_SPEED_PER_FRAME = 172 / SIM_HZ;
+
 /* Ground line shared by render.js (sprite stamping) and arena.js (world
    furniture/particles). Previously the literal `208` was redeclared
    independently in both files with nothing tying them together. */

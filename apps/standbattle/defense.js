@@ -17,7 +17,6 @@
             marks the attacker Break (next hit on it x1.8, resolvers.js).
             Internal state name stays 'parry' for the same pose reason. */
 
-import { DODGE_CHARGE_MAX } from './fighter.js';
 import { enterStagger } from './ai.js';
 import { spendPersistence, gainPersistence, gainMomentum } from './resources.js';
 
@@ -39,7 +38,7 @@ const GUARD_DRAIN_PER_FRAME = 14 / 60;
 export const GUARD_DAMAGE_MULT = 0.30; // rest converts to chip
 export const GUARD_BREAK_STAGGER_FRAMES = 40;
 
-function clampCharges(player) { player.dodgeCharges = Math.max(0, Math.min(DODGE_CHARGE_MAX, player.dodgeCharges)); }
+function clampCharges(player) { player.dodgeCharges = Math.max(0, Math.min(player.dodgeChargeMax, player.dodgeCharges)); }
 
 export function startStep(player, enemy) {
   if (player.dodgeCharges <= 0) return false;
@@ -52,7 +51,7 @@ export function startStep(player, enemy) {
 }
 
 export function tickStepCharges(player) {
-  if (player.dodgeCharges < DODGE_CHARGE_MAX) {
+  if (player.dodgeCharges < player.dodgeChargeMax) {
     player.dodgeRechargeFrames++;
     if (player.dodgeRechargeFrames >= STEP_RECHARGE_FRAMES) {
       player.dodgeRechargeFrames -= STEP_RECHARGE_FRAMES;
@@ -131,6 +130,6 @@ export function resolveClashSuccess(player, enemyAi, juice) {
   juice.triggerHitstop(90);
   enterStagger(enemyAi, CLASH_STAGGER_FRAMES, 1);
   const perfect = isPerfectClash(player);
-  if (perfect) player.dodgeCharges = Math.min(DODGE_CHARGE_MAX, player.dodgeCharges + 1);
+  if (perfect) player.dodgeCharges = Math.min(player.dodgeChargeMax, player.dodgeCharges + 1);
   return perfect;
 }

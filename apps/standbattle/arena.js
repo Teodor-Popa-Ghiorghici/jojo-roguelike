@@ -231,12 +231,15 @@ export function particles(g, juice, camX) {
 
 /* Tether legibility (GDD §3.2, Phase 4 deliverable 6): a thin line between
    User and Stand, drawn only while there's an actual reason to watch it --
-   Projected or over-extended -- so it doesn't clutter the default anchored
-   view. Pure watcher, same rule as everything else in this file: reads
+   detached or over-extended -- so it doesn't clutter the default anchored
+   view. Phase 9a: reads the generic `standDetached` flag every Stand Class
+   sets (stand_classes.js) instead of the Close-Range-only `projecting`, so
+   Mid's flick and Long's permanent detachment both draw it too. Pure
+   watcher, same rule as everything else in this file: reads
    combat.player/.stand, writes nothing back. */
 export function tetherLine(g, combat, camX) {
   const player = combat.player, stand = combat.stand;
-  if (!player.projecting && !player.strained) return;
+  if (!player.standDetached && !player.strained) return;
   const py = GROUND_Y + zToYOffset(player.z) - 40, sy = GROUND_Y + zToYOffset(stand.z) - 40;
   g.save();
   g.globalAlpha = player.strained ? 0.85 : 0.4;

@@ -26,6 +26,7 @@ import { PATTERNS } from './ai.js';
 import { applyDamage } from './fighter.js';
 import { resolveSpeedScalar, resolveCritChance, resolveTetherPx, resolveFeedbackPct } from './stats.js';
 import { hasStatus, STATUS_DEFS } from './status.js';
+import { CONTROL_SCHEMES } from './stand_classes.js';
 
 /* GDD §3.2: "−20% damage penalty while over-extended." Read directly off
    `ctx.attacker.strained` (combat_stand.js sets this once per frame, same
@@ -127,8 +128,18 @@ export function resolveDamage(ctx) {
     dmg = ctx.hitbox.dmg * (ctx.attacker.stand.stats.power / 8);
     dmg *= resolveMomentumMult(ctx.attacker.momentum);
     if (ctx.attacker.strained) dmg *= STRAIN_DAMAGE_MULT; // GDD §3.2 -- Stand damage only, never incoming
+    // GDD §3.4 -- Stand Class damage baseline (Long-Range's -35%); a no-op (1) for Close/Mid
+    const scheme = CONTROL_SCHEMES[ctx.attacker.stand.controlScheme] || CONTROL_SCHEMES.close;
+    dmg *= scheme.damageMult;
   } else {
     dmg = ctx.pattern.dmgMult * ctx.attacker.def.power * 2;
+    /* GDD §4.2 Warden (#12): "punishes you hard while your Stand is
+       detached" -- bonus multiplier on its own def, gated on the generic
+       standDetached flag every control scheme sets each frame
+       (stand_classes.js). A no-op for every enemy without the field. */
+    if (ctx.attacker.def.detachedStandPunishMult && ctx.defender.standDetached) {
+      dmg *= ctx.attacker.def.detachedStandPunishMult;
+    }
   }
   if (ctx.critMult) dmg *= ctx.critMult;
   if (ctx.defender.breakActive) dmg *= 1.8; // Perfect Clash's Break (GDD §3.7), consumed by applyHit
