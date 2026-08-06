@@ -64,10 +64,13 @@ export const REQUIEMS = [
   {
     id: 'requiem_crazy_diamond', name: 'Crazy Diamond, Unbreakable', rarity: 'legendary',
     requires: [{ donor: 'crazy_diamond' }],
-    desc: 'Restoration stops being a fraction: every hit you land now heals you for the FULL amount of damage it deals -- Josuke doesn\'t destroy anymore, full stop.',
-    tags: ['heal'],
+    desc: 'Restoration stops being a fraction: every hit you land now heals you for the FULL amount of damage it deals, and your Stand no longer spends Persistence at all -- there is nothing left in this fight that can wear you down.',
+    tags: ['heal', 'economy'],
     effects: [
       { hook: 'onHitResolve', fn: 'healPctOfDamage', data: { pct: 1.0 } }
+    ],
+    queries: [
+      { hook: 'getPersistenceCost', fn: 'multiplyFlat', data: { mult: 0 } }
     ]
   },
   {
