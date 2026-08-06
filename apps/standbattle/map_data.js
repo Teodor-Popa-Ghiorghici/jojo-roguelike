@@ -73,18 +73,47 @@ const ACT1_COMBAT_POOL = [
   { encounter: 'morioh_shopping_street' },
   { encounter: 'kameyu_loading_dock' }
 ];
-const ACT1_ELITE_POOL = [{ encounter: 'budogaoka_park_elite' }];
+/* Act I's 2nd boss (Yuya Fungami/Highway Star) is an Elite-tier fight
+   leading up to the true final boss, Killer Queen -- the same "N pre-boss
+   Elites -> one final boss" shape GDD §5.1's act table reads as for every
+   other Act below. */
+const ACT1_ELITE_POOL = [{ encounter: 'budogaoka_park_elite' }, { encounter: 'yuya_fungami_elite' }];
 const ACT1_EVENT_POOL = ['stray_cat', 'vending_machine', 'rokakaka_stand'];
+
+const ACT2_COMBAT_POOL = [
+  { enemy: 'morioh_thug' }, { enemy: 'knife_thug' },
+  { encounter: 'cairo_bazaar_ambush' }, { encounter: 'nile_docks_scuffle' }, { encounter: 'train_corridor_clash' }
+];
+const ACT2_ELITE_POOL = [{ encounter: 'hol_horse_elite' }, { encounter: 'ndoul_elite' }];
+const ACT2_EVENT_POOL = ['cairo_market_stall', 'sphinx_riddle'];
+
+const ACT3_COMBAT_POOL = [
+  { enemy: 'morioh_thug' }, { enemy: 'knife_thug' },
+  { encounter: 'piazza_gang_skirmish' }, { encounter: 'vineyard_ambush' }, { encounter: 'villa_hitmen' }
+];
+const ACT3_ELITE_POOL = [{ encounter: 'formaggio_elite' }, { encounter: 'illuso_elite' }];
+const ACT3_EVENT_POOL = ['vineyard_shrine', 'gondola_gambit'];
+
+const ACT4_COMBAT_POOL = [
+  { enemy: 'brute' }, { enemy: 'knife_thug' },
+  { encounter: 'ruin_gauntlet_skirmish' }, { encounter: 'voidscape_ambush' }
+];
+const ACT4_ELITE_POOL = [{ encounter: 'funny_valentine_elite' }];
+const ACT4_EVENT_POOL = ['reality_tear', 'echo_of_yourself'];
 
 /* GDD §5.1 act table: rows 9/10/10/11, ~7/~8/~8/~9 encounters. Bosses per
    Act (§4.6/§9): row 0 opener + the fixed final-row boss are the only
    hardcoded content per Act; everything interior is weighted-random over
-   that Act's own pool. Acts II-IV's pools/scenes are filled in by their
-   own authoring batches (Phase 9d); until then they intentionally reuse
-   Act I's roster/scene as inert filler so the generalized generator is
-   provably correct end-to-end before any new content lands. */
+   that Act's own pool. "2-3 bosses per Act" (§4.6) reads as 1-2 Elite-
+   tier pre-boss fights (elitePool, each wrapping a full boss def --
+   data_encounters.js) plus the one true final boss in `boss` below --
+   never two nodes both typed 'boss' in the same generated graph. `title`/
+   `subtitle` are read by map.js's HUD banner, replacing what used to be a
+   hardcoded "ACT I MORIOH" literal (Phase 9d fix -- Acts II-IV would
+   otherwise have displayed Act I's own banner). */
 export const ACT_CONFIGS = {
   1: {
+    title: 'ACT I  MORIOH', subtitle: 'DIAMOND IS UNBREAKABLE',
     rowsMin: 9, rowsMax: 11,
     constraints: ACT1_CONSTRAINTS,
     combatPool: ACT1_COMBAT_POOL, elitePool: ACT1_ELITE_POOL, eventPool: ACT1_EVENT_POOL,
@@ -93,27 +122,30 @@ export const ACT_CONFIGS = {
     scenes: { combat: 'street', elite: 'street', event: 'alley', rest: 'park', shop: 'park', treasure: 'park', archive: 'store', boss: 'store' }
   },
   2: {
+    title: 'ACT II  CAIRO', subtitle: 'STARDUST CRUSADERS',
     rowsMin: 10, rowsMax: 11,
     constraints: ACT1_CONSTRAINTS,
-    combatPool: ACT1_COMBAT_POOL, elitePool: ACT1_ELITE_POOL, eventPool: ACT1_EVENT_POOL,
-    rowZero: { enemy: 'morioh_thug', label: 'STREET' },
-    boss: { id: 'killer_queen', label: 'PLACEHOLDER' },
-    scenes: { combat: 'street', elite: 'street', event: 'alley', rest: 'park', shop: 'park', treasure: 'park', archive: 'store', boss: 'store' }
+    combatPool: ACT2_COMBAT_POOL, elitePool: ACT2_ELITE_POOL, eventPool: ACT2_EVENT_POOL,
+    rowZero: { enemy: 'morioh_thug', label: 'BAZAAR OUTSKIRTS' },
+    boss: { id: 'dio', label: "DIO'S MANSION" },
+    scenes: { combat: 'bazaar', elite: 'train_car', event: 'nile_docks', rest: 'nile_docks', shop: 'bazaar', treasure: 'nile_docks', archive: 'train_car', boss: 'train_car' }
   },
   3: {
+    title: 'ACT III  NAPLES', subtitle: 'GOLDEN WIND',
     rowsMin: 10, rowsMax: 11,
     constraints: ACT1_CONSTRAINTS,
-    combatPool: ACT1_COMBAT_POOL, elitePool: ACT1_ELITE_POOL, eventPool: ACT1_EVENT_POOL,
-    rowZero: { enemy: 'morioh_thug', label: 'STREET' },
-    boss: { id: 'killer_queen', label: 'PLACEHOLDER' },
-    scenes: { combat: 'street', elite: 'street', event: 'alley', rest: 'park', shop: 'park', treasure: 'park', archive: 'store', boss: 'store' }
+    combatPool: ACT3_COMBAT_POOL, elitePool: ACT3_ELITE_POOL, eventPool: ACT3_EVENT_POOL,
+    rowZero: { enemy: 'morioh_thug', label: 'PIAZZA OUTSKIRTS' },
+    boss: { id: 'diavolo', label: "DIAVOLO'S VILLA" },
+    scenes: { combat: 'piazza', elite: 'villa', event: 'vineyard', rest: 'vineyard', shop: 'piazza', treasure: 'vineyard', archive: 'villa', boss: 'villa' }
   },
   4: {
+    title: 'ACT IV  THE GAUNTLET', subtitle: 'A REALITY, WARPED',
     rowsMin: 11, rowsMax: 13,
     constraints: ACT1_CONSTRAINTS,
-    combatPool: ACT1_COMBAT_POOL, elitePool: ACT1_ELITE_POOL, eventPool: ACT1_EVENT_POOL,
-    rowZero: { enemy: 'morioh_thug', label: 'STREET' },
-    boss: { id: 'killer_queen', label: 'PLACEHOLDER' },
-    scenes: { combat: 'street', elite: 'street', event: 'alley', rest: 'park', shop: 'park', treasure: 'park', archive: 'store', boss: 'store' }
+    combatPool: ACT4_COMBAT_POOL, elitePool: ACT4_ELITE_POOL, eventPool: ACT4_EVENT_POOL,
+    rowZero: { enemy: 'knife_thug', label: 'THE RUINED STREET' },
+    boss: { id: 'pucci', label: 'THE END OF THE WORLD' },
+    scenes: { combat: 'ruin', elite: 'voidscape', event: 'throneroom', rest: 'throneroom', shop: 'ruin', treasure: 'voidscape', archive: 'throneroom', boss: 'voidscape' }
   }
 };

@@ -80,38 +80,10 @@ export { MOVES } from './moves.js';
    precedent moves.js's MOVES re-export above already set. */
 export { ENEMIES } from './data_enemies.js';
 
-/* Encounters (tech §3 schema, GDD §4.4) -- waves/spawn/win-condition data,
-   consumed by encounter.js. `winCondition: 'killAll'` is the one
-   implementation Phase 5 ships (see encounter.js); Rule Fights and GDD §15
-   encounter objectives are future values of this same field, never a new
-   field. A wave's enemy list is either a literal `types` array (ids or,
-   for legacy solo boss/elite fights, a raw def object) or a `generate`
-   budget/pool consumed by encounter_budget.js's composition generator at
-   spawn time (the run's seed, not data, decides the actual pick). */
-export const ENCOUNTERS = {
-  morioh_shopping_street: {
-    id: 'morioh_shopping_street', label: 'SHOPPING STREET SCUFFLE', winCondition: 'killAll',
-    waves: [
-      { generate: { budget: 5, pool: ['morioh_thug', 'knife_thug'] } },
-      { types: ['brute'] }
-    ]
-  },
-  budogaoka_park_elite: {
-    id: 'budogaoka_park_elite', label: 'ANGELO', winCondition: 'killAll',
-    waves: [{ types: ['angelo', 'morioh_thug'] }]
-  },
-  /* Phase 8 deliverable 1: the map generator needs more than one Combat
-     shape to draw from across 7-9 interior rows -- both entries are pure
-     data over the same three Phase-5 enemies, no new engine path. */
-  morioh_alley_scuffle: {
-    id: 'morioh_alley_scuffle', label: 'ALLEYWAY SCUFFLE', winCondition: 'killAll',
-    waves: [{ generate: { budget: 3, pool: ['morioh_thug', 'knife_thug'] } }]
-  },
-  kameyu_loading_dock: {
-    id: 'kameyu_loading_dock', label: 'LOADING DOCK', winCondition: 'killAll',
-    waves: [{ generate: { budget: 6, pool: ['morioh_thug', 'knife_thug', 'brute'] } }]
-  }
-};
+/* Encounters moved to data_encounters.js (Phase 9d, 300-line cap, now one
+   pool per Act) -- re-exported here so every existing
+   `import { ENCOUNTERS } from './data.js'` call site is untouched. */
+export { ENCOUNTERS } from './data_encounters.js';
 
 /* Modifiers apply at node-spawn time for perceived variety without
    hand-authoring new enemy types, per §13. */
@@ -125,40 +97,13 @@ export const MODIFIERS = {
    data_enemies.js's re-exports above already set. */
 export { BOSS_KILLER_QUEEN, BOSSES } from './data_bosses.js';
 
-/* RUN_BUFFS (the prototype's placeholder "taste of Build Diversity" --
-   three bespoke flat multipliers) is retired as of Phase 7: fragments.js's
-   real 12-Fragment pool is the actual system it was standing in for. The
-   cat event's 'PET IT' choice now routes into the same Fragment offer
-   flow every combat/elite/boss node clear does (index.js), rather than
-   an instant no-choice grant. */
-export const EVENTS = {
-  stray_cat: {
-    title: 'BIZARRE ENCOUNTER',
-    text: 'A cat watches you from the alley mouth. Its front paw glints — not fur. Metal.',
-    choices: [
-      { label: 'PET IT', kind: 'fragment', flavor: 'The cat purrs static. Something in your Stand feels sharper.' },
-      { label: 'WALK AWAY', kind: 'heal', amount: 12, flavor: 'Nothing happens. You catch your breath instead.' }
-    ]
-  },
-  /* Phase 8: a map with 2-3 Bizarre Encounter nodes per run needs more
-     than one event so they don't all read as the same cat. */
-  vending_machine: {
-    title: 'BIZARRE ENCOUNTER',
-    text: 'A vending machine hums a tune that was never recorded. It takes no coins, only intent.',
-    choices: [
-      { label: 'FEED IT INTENT', kind: 'fragment', flavor: 'Something drops. It was never in the machine to begin with.' },
-      { label: 'UNPLUG IT', kind: 'heal', amount: 12, flavor: 'The hum stops. You feel steadier for it.' }
-    ]
-  },
-  rokakaka_stand: {
-    title: 'BIZARRE ENCOUNTER',
-    text: 'A fruit stand sells something that looks like a durian but definitely isn’t.',
-    choices: [
-      { label: 'TASTE IT', kind: 'fragment', flavor: 'The world resets by exactly one wrong decision. Yours, apparently.' },
-      { label: 'WALK ON', kind: 'heal', amount: 12, flavor: 'Morioh stays quiet. You keep walking.' }
-    ]
-  }
-};
+/* Events moved to data_events.js (Phase 9d, 300-line cap, now one new
+   event per Act) -- re-exported here so every existing
+   `import { EVENTS } from './data.js'` call site is untouched. RUN_BUFFS
+   (the prototype's placeholder "taste of Build Diversity") is retired as
+   of Phase 7: fragments.js's real Fragment pool is the actual system it
+   was standing in for. */
+export { EVENTS } from './data_events.js';
 
 /* Act 1 — Morioh streets (Diamond is Unbreakable), §3. As of Phase 8 this
    is just the act's identity/flavour; the node graph itself is generated

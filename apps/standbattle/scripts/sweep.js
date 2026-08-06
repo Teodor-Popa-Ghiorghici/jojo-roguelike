@@ -11,7 +11,7 @@
 import { runHeadlessFight } from '../headless_harness.js';
 import { ENEMIES, BOSSES } from '../data.js';
 import { createRng } from '../rng.js';
-import { generateAct1Map } from '../map_gen.js';
+import { generateActMap } from '../map_gen.js';
 import { checkAll } from '../map_constraints.js';
 import { ACT_CONFIGS } from '../map_data.js';
 import { createRunFragmentState, generateOffer, skipOfferForPity, PITY_THRESHOLD } from '../fragment_offers.js';
@@ -87,29 +87,34 @@ function worstPityGap(graph, rng) {
   return worst;
 }
 
+// Phase 9d: every Act in ACT_CONFIGS, not just Act I -- a 5th Act is swept for free.
+const ACTS = Object.keys(ACT_CONFIGS).map(Number);
 let zeroRestPaths = 0, zeroShopPaths = 0, worstPityGapOverall = 0, constraintFailures = 0, repairedCount = 0;
 const attempts = [];
-for (let i = 0; i < RUNS; i++) {
-  const rng = createRng(`mapsweep-${i}`);
-  const graph = generateAct1Map(rng.stream('map'));
-  attempts.push(graph.attempts);
-  if (graph.repaired) repairedCount++;
-  if (!checkAll(graph, ACT_CONFIGS[1].constraints).pass) constraintFailures++;
-  graph.paths.forEach(p => {
-    if (!p.some(id => graph.nodes[id].type === 'rest')) zeroRestPaths++;
-    if (!p.some(id => graph.nodes[id].type === 'shop')) zeroShopPaths++;
-  });
-  const gap = worstPityGap(graph, rng.stream('rewards'));
-  if (gap > worstPityGapOverall) worstPityGapOverall = gap;
-}
+ACTS.forEach(act => {
+  for (let i = 0; i < RUNS; i++) {
+    const rng = createRng(`mapsweep-act${act}-${i}`);
+    const graph = generateActMap(rng.stream('map'), act);
+    attempts.push(graph.attempts);
+    if (graph.repaired) repairedCount++;
+    if (!checkAll(graph, ACT_CONFIGS[act].constraints).pass) constraintFailures++;
+    graph.paths.forEach(p => {
+      if (!p.some(id => graph.nodes[id].type === 'rest')) zeroRestPaths++;
+      if (!p.some(id => graph.nodes[id].type === 'shop')) zeroShopPaths++;
+    });
+    const gap = worstPityGap(graph, rng.stream('rewards'));
+    if (gap > worstPityGapOverall) worstPityGapOverall = gap;
+  }
+});
+const totalMapRuns = ACTS.length * RUNS;
 attempts.sort((a, b) => a - b);
-const meanAttempts = attempts.reduce((s, a) => s + a, 0) / RUNS;
+const meanAttempts = attempts.reduce((s, a) => s + a, 0) / totalMapRuns;
 const mapOk = zeroRestPaths === 0 && zeroShopPaths === 0 && worstPityGapOverall <= PITY_THRESHOLD && constraintFailures === 0;
 
 if (verbose) {
-  console.log(`-- map generator (${RUNS} seeds) --`);
-  console.log(`  attempts: mean ${meanAttempts.toFixed(2)}, p50 ${attempts[Math.floor(RUNS * 0.5)]}, p95 ${attempts[Math.floor(RUNS * 0.95)]}, max ${attempts[RUNS - 1]}`);
-  console.log(`  repair floor hit: ${repairedCount}/${RUNS} (${(repairedCount / RUNS * 100).toFixed(3)}%)`);
+  console.log(`-- map generator (${totalMapRuns} seeds across ${ACTS.length} Acts) --`);
+  console.log(`  attempts: mean ${meanAttempts.toFixed(2)}, p50 ${attempts[Math.floor(totalMapRuns * 0.5)]}, p95 ${attempts[Math.floor(totalMapRuns * 0.95)]}, max ${attempts[totalMapRuns - 1]}`);
+  console.log(`  repair floor hit: ${repairedCount}/${totalMapRuns} (${(repairedCount / totalMapRuns * 100).toFixed(3)}%)`);
 }
 
 const combatOk = undecided.length === 0;
@@ -122,7 +127,7 @@ if (combatOk) {
   });
 }
 if (mapOk) {
-  console.log(`OK   map: ${RUNS}/${RUNS} satisfy constraints; 0 seeds with a 0-Rest/0-Shop path; worst pity gap ${worstPityGapOverall}/${PITY_THRESHOLD}; retry mean ${meanAttempts.toFixed(1)}, repair floor ${(repairedCount / RUNS * 100).toFixed(2)}%`);
+  console.log(`OK   map: ${totalMapRuns}/${totalMapRuns} satisfy constraints across ${ACTS.length} Acts; 0 seeds with a 0-Rest/0-Shop path; worst pity gap ${worstPityGapOverall}/${PITY_THRESHOLD}; retry mean ${meanAttempts.toFixed(1)}, repair floor ${(repairedCount / totalMapRuns * 100).toFixed(2)}%`);
 } else {
   console.log(`FAIL map: ${constraintFailures} constraint failure(s), ${zeroRestPaths} 0-Rest path(s), ${zeroShopPaths} 0-Shop path(s), worst pity gap ${worstPityGapOverall}/${PITY_THRESHOLD}`);
 }

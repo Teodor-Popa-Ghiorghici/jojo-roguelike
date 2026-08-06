@@ -12,6 +12,7 @@ import { px, poly, disc, ellipse, dither, ring, vband } from './draw.js';
 import { text, paragraph, textWidth } from './font.js';
 import { SKY, TOWN, S, SH, BASE, LT, RIM } from './palette.js';
 import { drawBuildSummary } from './rewards.js';
+import { ACT_CONFIGS } from './map_data.js';
 
 const MARGIN = 40;
 const ROW_SPACING = 60;
@@ -187,8 +188,9 @@ export function drawMap(g, W, H, graph, runState, tsec) {
 
   px(g, 0, 0, W, 26, '#0A0B14');
   px(g, 0, 26, W, 1, '#6A7396');
-  text(g, 'ACT I  MORIOH', 8, 4, { scale: 2, color: '#FFE6F0', outline: '#3A0A1E' });
-  text(g, 'DIAMOND IS UNBREAKABLE', 8, 18, { scale: 1, color: '#B08AC8' });
+  const actCfg = ACT_CONFIGS[runState.act] || ACT_CONFIGS[1];
+  text(g, actCfg.title, 8, 4, { scale: 2, color: '#FFE6F0', outline: '#3A0A1E' });
+  text(g, actCfg.subtitle, 8, 18, { scale: 1, color: '#B08AC8' });
   text(g, 'HP ' + Math.round(runState.hp) + '/' + runState.maxHp, W - 8, 4, { scale: 1, align: 'right', color: '#5FD672' });
   text(g, runState.yen + ' YEN', W - 8, 12, { scale: 1, align: 'right', color: '#FFE86A' });
   text(g, 'TENSION ' + runState.tension + '/5', W - 8, 20, { scale: 1, align: 'right', color: '#F06A56' });
