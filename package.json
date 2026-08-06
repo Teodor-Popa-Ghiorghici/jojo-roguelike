@@ -11,7 +11,10 @@
     "validate": "node apps/standbattle/scripts/validate.js",
     "assert": "node apps/standbattle/scripts/assert.js",
     "sweep": "node apps/standbattle/scripts/sweep.js",
-    "telemetry-sim": "node apps/standbattle/scripts/telemetry_sim.js"
+    "telemetry-sim": "node apps/standbattle/scripts/telemetry_sim.js",
+    "replay": "node apps/standbattle/scripts/replay.js",
+    "fuzz": "node apps/standbattle/scripts/fuzz.js",
+    "determinism": "node apps/standbattle/scripts/determinism.js"
   },
   "dependencies": {
     "express": "^4.21.2"

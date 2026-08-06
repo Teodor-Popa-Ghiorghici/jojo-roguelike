@@ -260,6 +260,9 @@ export function createCombat(enemyOrEncounterDef, ownedFragments, opts, rng) {
   combat.update = dtMs => { loop.advance(dtMs); };
   /* Headless/testing usage: advance exactly one frame, no wall clock. */
   combat.step = () => loop.stepOnce();
+  /* Phase 13a: the fixed-step frame counter, read-only, for replay
+     recording/playback (replay.js) -- neither writes it back. */
+  combat.getFrame = () => loop.frame;
 
   return combat;
 }
