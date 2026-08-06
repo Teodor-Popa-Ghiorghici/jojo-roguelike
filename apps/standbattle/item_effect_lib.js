@@ -148,6 +148,33 @@ export const ITEM_EFFECT_LIB = {
     if (!ctx.entity || ctx.entity.hp <= 0) return;
     applyDamage(ctx.entity, data.perSec || 0);
     if (ctx.entity.hp <= 0 && ctx.combat) ctx.combat.outcome = 'lose';
+  },
+
+  /* onCombatTick only. Phase 10 Requiem primitive (GDD §6.2's The World
+     Requiem: "Time-stop is on a passive 25s cycle"). Counts real seconds
+     on ctx.combat itself (onCombatTick already fires exactly once per
+     real second, combat.js) and triggers a time-stop every `cycleSec`
+     ticks -- a genuine rule rewrite (time-stop no longer needs a Perfect
+     Clash to happen at all), not a bigger number on an existing clause. */
+  periodicTimeStop(ctx, data) {
+    if (!ctx.combat) return;
+    ctx.combat.requiemCycleTicks = (ctx.combat.requiemCycleTicks || 0) + 1;
+    if (ctx.combat.requiemCycleTicks % (data.cycleSec || 25) === 0) {
+      ctx.combat.timeStopFrames = Math.max(ctx.combat.timeStopFrames, data.frames || 60);
+    }
+  },
+
+  /* onDamageIncoming only. Phase 10 Requiem primitive (GDD §6.2's Gold
+     Experience Requiem, reproduced close to literally: "Enemy attacks
+     that would kill you are reverted to zero, once per encounter"). The
+     "once" is tracked on the player entity itself (fresh every fight,
+     combat.js creates a new player each encounter), not on runState --
+     this is a per-encounter save, not a run-wide charge. */
+  preventLethalOnce(ctx) {
+    if (!ctx.defender || ctx.defender.lethalSaveUsed) return;
+    if (ctx.damage == null || ctx.damage < ctx.defender.hp) return;
+    ctx.damage = 0;
+    ctx.defender.lethalSaveUsed = true;
   }
 };
 

@@ -271,7 +271,9 @@ export const VERB_CATEGORIES = {
   applyStatusToNearby: ['apply-status'],
   damageNearby: [],
   consumeStatusForBonus: ['consume-status', 'convert-resource'],
-  selfDamage: []
+  selfDamage: [],
+  periodicTimeStop: ['rewrite-slot'],
+  preventLethalOnce: ['rewrite-slot']
 };
 export const QUERY_VERB_CATEGORIES = {
   multiplyIfPlayerAttacker: [],
