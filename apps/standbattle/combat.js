@@ -87,6 +87,13 @@ export function createCombat(enemyOrEncounterDef, ownedFragments, opts, rng) {
   const player = createPlayerFighter(standDef, ARENA_MIN + 122);
   player.maxPersistence = dispatcher.runQuery('getMaxPersistence', player.maxPersistence, { entity: player });
   clampPersistence(player);
+  /* Phase 9d: a Stand's own innate ability (Killer Queen's Bites the
+     Dust utility) installs through the exact same seam a Fragment does --
+     data.js names the effects, installFragment() doesn't care whether the
+     def came from the reward pool or the base kit. */
+  if (standDef.innateAbilities) {
+    installFragment(dispatcher, { id: standDef.id + ':innate', effects: standDef.innateAbilities }, 1);
+  }
   /* Phase 10 (Crazy Diamond donor's "return-to-position" identity, GDD
      §6.1): a fixed snapshot of the User's own starting spot, read by
      item_effect_lib.js's returnToAnchor -- no per-encounter "restore

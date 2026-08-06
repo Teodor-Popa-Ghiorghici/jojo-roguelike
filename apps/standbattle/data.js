@@ -19,6 +19,53 @@ export const STANDS = {
     stats: { power: 8, speed: 7, range: 2, persistence: 6, precision: 6, devPotential: 3 },
     moves: { light: 'sp_light', medium: 'sp_medium', heavy: 'sp_heavy', special: 'sp_barrage' },
     standRush: 'sp_ora_rush'
+  },
+  /* Phase 9d: the remaining 3 launch Stands (spec §2.2), each plugging
+     into an existing stand_classes.js CONTROL_SCHEMES entry -- a 4th
+     Stand is never a new class, just a pick among close/mid/long. */
+  silver_chariot: {
+    id: 'silver_chariot',
+    character: 'Jean Pierre Polnareff',
+    standName: 'Silver Chariot',
+    role: 'rapier',
+    controlScheme: 'mid',
+    source: 'Stardust Crusaders (Part 3)',
+    stats: { power: 6, speed: 9, range: 4, persistence: 6, precision: 9, devPotential: 3 },
+    moves: { light: 'sc_light', medium: 'sc_medium', heavy: 'sc_heavy', special: 'sc_special' },
+    standRush: 'sc_hora_rush'
+  },
+  hierophant_green: {
+    id: 'hierophant_green',
+    character: 'Noriaki Kakyoin',
+    standName: 'Hierophant Green',
+    role: 'puppeteer',
+    controlScheme: 'long',
+    source: 'Stardust Crusaders (Part 3)',
+    stats: { power: 4, speed: 5, range: 9, persistence: 7, precision: 6, devPotential: 3 },
+    moves: { light: 'hg_light', medium: 'hg_medium', heavy: 'hg_heavy', special: 'hg_special' },
+    standRush: 'hg_rush'
+  },
+  /* Same character/Stand id as data_bosses.js's BOSS_KILLER_QUEEN --
+     separate registries (STANDS vs BOSSES), no collision, and exactly the
+     "playable AND story boss" case spec §2.2 calls out by name. */
+  killer_queen: {
+    id: 'killer_queen',
+    character: 'Yoshikage Kira',
+    standName: 'Killer Queen',
+    role: 'trickster',
+    controlScheme: 'mid',
+    source: 'Diamond is Unbreakable (Part 4)',
+    stats: { power: 6, speed: 6, range: 5, persistence: 7, precision: 7, devPotential: 4 },
+    moves: { light: 'kq_light', medium: 'kq_medium', heavy: 'kq_heavy', special: 'kq_special' },
+    standRush: 'kq_bites_the_dust',
+    /* GDD §2.3: Bites the Dust must be a run-altering utility effect, not
+       a raw damage tool -- combat.js installs this once per fight through
+       the same seam a Fragment uses (installFragment), see
+       item_effect_lib.js's armLethalSaveOnRush/preventLethalIfArmed. */
+    innateAbilities: [
+      { hook: 'onMoveStart', fn: 'armLethalSaveOnRush', data: {} },
+      { hook: 'onDamageIncoming', fn: 'preventLethalIfArmed', data: {} }
+    ]
   }
 };
 
