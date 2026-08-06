@@ -175,6 +175,25 @@ export const ITEM_EFFECT_LIB = {
     if (ctx.damage == null || ctx.damage < ctx.defender.hp) return;
     ctx.damage = 0;
     ctx.defender.lethalSaveUsed = true;
+  },
+
+  /* onMoveStart/onDamageIncoming pair -- Phase 9d, Killer Queen's Bites
+     the Dust. GDD §2.3 is explicit this must be "a run-altering utility
+     effect... not a raw damage tool": a Stand-level innate ability
+     (STANDS.<id>.innateAbilities, installed once at combat creation via
+     the same installFragment() Fragments use) rather than a Fragment
+     itself, since it's the base kit's own Rush, not a reward. Separate
+     verb from preventLethalOnce above (not a shared gate on it) so an
+     owned Gold Experience Requiem's unconditional once-per-fight save
+     never entangles with whether this fight's Rush has fired yet. */
+  armLethalSaveOnRush(ctx) {
+    if (ctx.move && ctx.move.slot === 'rush') ctx.entity.lethalSaveArmed = true;
+  },
+  preventLethalIfArmed(ctx) {
+    if (!ctx.defender || !ctx.defender.lethalSaveArmed || ctx.defender.lethalSaveUsed) return;
+    if (ctx.damage == null || ctx.damage < ctx.defender.hp) return;
+    ctx.damage = 0;
+    ctx.defender.lethalSaveUsed = true;
   }
 };
 

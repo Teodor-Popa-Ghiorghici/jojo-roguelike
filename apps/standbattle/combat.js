@@ -45,7 +45,7 @@ const TOKEN_RANGED_COUNT = 1; // GDD §16 -- a separate, smaller pool; unused by
 
 export function createCombat(enemyOrEncounterDef, ownedFragments, opts, rng) {
   opts = opts || {};
-  const standDef = STANDS.star_platinum;
+  const standDef = STANDS[opts.standId] || STANDS.star_platinum;
 
   /* Effect/query/content pipeline (tech §2.1/§2.2/§2.9, Phase 3) is built
      BEFORE any fighter, because a Fragment's getMaxPersistence query must
@@ -87,6 +87,18 @@ export function createCombat(enemyOrEncounterDef, ownedFragments, opts, rng) {
   const player = createPlayerFighter(standDef, ARENA_MIN + 122);
   player.maxPersistence = dispatcher.runQuery('getMaxPersistence', player.maxPersistence, { entity: player });
   clampPersistence(player);
+  /* No bespoke sprite per Stand yet (data.js's STANDS.<id>.tint comment) --
+     a silhouette tint is the cheap generic stand-in, read by render.js's
+     drawFighter (User body, already generic over f.tint) and drawStand
+     (the Stand's own materialize glow). */
+  player.tint = standDef.tint || null;
+  /* Phase 9d: a Stand's own innate ability (Killer Queen's Bites the
+     Dust utility) installs through the exact same seam a Fragment does --
+     data.js names the effects, installFragment() doesn't care whether the
+     def came from the reward pool or the base kit. */
+  if (standDef.innateAbilities) {
+    installFragment(dispatcher, { id: standDef.id + ':innate', effects: standDef.innateAbilities }, 1);
+  }
   /* Phase 10 (Crazy Diamond donor's "return-to-position" identity, GDD
      §6.1): a fixed snapshot of the User's own starting spot, read by
      item_effect_lib.js's returnToAnchor -- no per-encounter "restore

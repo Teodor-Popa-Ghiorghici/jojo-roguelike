@@ -14,9 +14,9 @@
    the boss. This mirrors the old linear `advanceNode`'s job exactly, just
    over a graph instead of `nodeIndex++`. */
 
-import { ENEMIES, ENCOUNTERS, BOSS_KILLER_QUEEN, MODIFIERS, EVENTS, STANDS } from './data.js';
+import { ENEMIES, ENCOUNTERS, BOSSES, MODIFIERS, EVENTS, STANDS } from './data.js';
 import { createCombat } from './combat.js';
-import { generateAct1Map } from './map_gen.js';
+import { enterAct } from './act_flow.js';
 import {
   generateOffer, applyOffer, ownedFragmentEntries, createRunFragmentState,
   skipOfferForPity, PITY_THRESHOLD
@@ -36,22 +36,22 @@ import {
 import { wireCombatAudio, sfxActComplete } from './audio.js';
 import { musicSetIntensity } from './music.js';
 
-function defaultUpgradePoints() {
-  return resolveUpgradeSlotCount({ stand: STANDS.star_platinum }, createStatPipeline());
+function defaultUpgradePoints(standId) {
+  return resolveUpgradeSlotCount({ stand: STANDS[standId] || STANDS.star_platinum }, createStatPipeline());
 }
 
-export function createFreshRunState(seed, rng) {
+export function createFreshRunState(seed, rng, standId) {
   const fragState = createRunFragmentState();
-  fragState.upgradePoints = defaultUpgradePoints();
-  const graph = generateAct1Map(rng.stream('map'));
-  const rootId = Object.values(graph.nodes).find(n => n.row === 0).id;
-  return {
-    seed, act: 1, graph, nodeId: rootId, visited: [rootId],
+  fragState.upgradePoints = defaultUpgradePoints(standId);
+  const rs = {
+    seed, standId: standId || 'star_platinum', act: 1, graph: null, nodeId: null, visited: [],
     hp: 100, maxHp: 100, yen: 0, tension: 0,
     rerollsUsed: 0, removalsUsed: 0,
     telemetry: createTelemetryCollector(),
     ...fragState
   };
+  enterAct(rs, rng);
+  return rs;
 }
 
 export function persistRun(state, env) { env.saveStore.saveRun(state.runState); }
@@ -69,9 +69,9 @@ function startCombatForNode(state, env, node) {
   const rs = state.runState;
   // Phase 10: every owned Relic/Duo/Disc rides into the fight the same
   // way owned Fragments already did -- see combat.js's install block.
-  const opts = { shakeEnabled: env.shakeEnabled, relics: rs.relics, duos: rs.duosOwned, discs: rs.discsBySlot };
+  const opts = { shakeEnabled: env.shakeEnabled, relics: rs.relics, duos: rs.duosOwned, discs: rs.discsBySlot, standId: rs.standId };
   let target;
-  if (node.type === 'boss') { target = BOSS_KILLER_QUEEN; }
+  if (node.type === 'boss') { target = BOSSES[node.boss]; }
   else if (node.encounter) { target = tensionScaledEncounter(ENCOUNTERS[node.encounter], rs.tension); }
   else {
     target = ENEMIES[node.enemy];
@@ -155,12 +155,22 @@ export function commitNode(state, env) {
   musicSetIntensity(0);
   recordTension(rs.telemetry, rs.tension);
   if (rs.graph.nodes[rs.nodeId].type === 'boss') {
-    state.scene = 'complete';
-    env.meta.cleared = true;
-    env.saveStore.saveMeta(env.meta);
-    appendRunSummary(env.ctx, { seed: rs.seed, stand: 'star_platinum', actReached: 1, killer: null, collector: rs.telemetry });
-    env.saveStore.clearRun();
     sfxActComplete();
+    if (rs.act < 4) {
+      // Act clear, not run clear: same node-graph machinery generates the
+      // next Act's map (map_gen.js's generateActMap, keyed on rs.act) --
+      // the run continues with its build/HP/economy intact, never resets.
+      rs.act += 1;
+      enterAct(rs, state.runRng);
+      state.scene = 'map';
+      persistRun(state, env);
+    } else {
+      state.scene = 'complete';
+      env.meta.cleared = true;
+      env.saveStore.saveMeta(env.meta);
+      appendRunSummary(env.ctx, { seed: rs.seed, stand: rs.standId, actReached: rs.act, killer: null, collector: rs.telemetry });
+      env.saveStore.clearRun();
+    }
   } else {
     state.scene = 'map';
     persistRun(state, env);
@@ -171,7 +181,7 @@ export function finishRunLoss(state, env) {
   const rs = state.runState;
   const node = rs.graph.nodes[state.enteringNodeId || rs.nodeId];
   const killer = node.boss || node.encounter || node.enemy || null;
-  appendRunSummary(env.ctx, { seed: rs.seed, stand: 'star_platinum', actReached: 1, killer, collector: rs.telemetry });
+  appendRunSummary(env.ctx, { seed: rs.seed, stand: rs.standId, actReached: rs.act, killer, collector: rs.telemetry });
   env.saveStore.clearRun();
   state.scene = 'title';
 }

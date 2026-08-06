@@ -99,6 +99,59 @@ export const PATTERNS = {
        own projectile pattern can opt into via this one field, not a
        second bespoke move. */
     hazard: { radius: 40, tickFrames: 20, dmg: 4, lifeFrames: 150 }
+  },
+  /* Phase 9d: 7 more boss signatures (2 more bosses -- Illuso, Funny
+     Valentine -- use the `summon` def field, already generic since
+     Phase 9b's Puppeteer/Caller, as their one bespoke signature instead
+     of a new PATTERNS entry). Every windup here still clears the 260ms
+     fairness floor -- canon fidelity never overrides that invariant, see
+     king_crimson_erase and made_in_heaven_acceleration below, both
+     "instant"-feeling canon abilities kept to a legal minimum instead of
+     truly skipping the telegraph. */
+  highway_star_dash: { // Yuya Fungami / Highway Star (Act I) -- extreme speed while "riding" his Stand
+    id: 'highway_star_dash', label: 'HIGHWAY STAR', windupFrames: 18, activeFrames: 8, recoverFrames: 20, // 300/133/333ms
+    range: 90, dmgMult: 1.6, knockback: 26, hitstopMs: 80, telegraph: '#55FF99', glyph: 'chevron',
+    armor: false, tags: ['melee', 'heavy'],
+    hitbox: { x: 45, z: 0, w: 90, tags: ['melee', 'heavy'] }
+  },
+  emperor_curveshot: { // Hol Horse / The Emperor (Act II) -- bullets that curve in midair
+    id: 'emperor_curveshot', label: 'CURVING BULLET', windupFrames: 24, activeFrames: 50, recoverFrames: 22, // 400/833/367ms
+    range: 420, dmgMult: 1.1, knockback: 14, hitstopMs: 55, telegraph: '#CC66FF', glyph: 'crosshair',
+    armor: false, tags: ['ranged'],
+    projectileSpeed: 480, ranged: true, homing: true
+  },
+  geb_drowning_wave: { // N'Doul / Geb (Act II) -- a sound-Stand's wide, unseen drowning pool
+    id: 'geb_drowning_wave', label: 'DROWNING WAVE', windupFrames: 30, activeFrames: 40, recoverFrames: 26, // 500/667/433ms
+    range: 380, dmgMult: 0.8, knockback: 10, hitstopMs: 50, telegraph: '#3399FF', glyph: 'crosshair',
+    armor: false, tags: ['ranged'],
+    projectileSpeed: 300, ranged: true,
+    hazard: { radius: 70, tickFrames: 22, dmg: 5, lifeFrames: 240 }
+  },
+  the_world_time_stop: { // DIO / The World (Act II final) -- everything that "happened" during stopped time, landing at once
+    id: 'the_world_time_stop', label: 'THE WORLD', windupFrames: 28, activeFrames: 10, recoverFrames: 30, // 467/167/500ms
+    range: 100, dmgMult: 2.2, knockback: 30, hitstopMs: 140, telegraph: '#FFDD00', glyph: 'chevron',
+    armor: true, tags: ['melee', 'heavy'],
+    hitbox: { x: 50, z: 0, w: 100, tags: ['melee', 'heavy'] },
+    hazard: { radius: 50, tickFrames: 20, dmg: 6, lifeFrames: 180 } // knives left where time resumed
+  },
+  little_feet_shrink_zone: { // Formaggio / Little Feet (Act III) -- a shrinking void that swallows anything inside
+    id: 'little_feet_shrink_zone', label: 'LITTLE FEET', windupFrames: 26, activeFrames: 36, recoverFrames: 24, // 433/600/400ms
+    range: 340, dmgMult: 0.7, knockback: 8, hitstopMs: 45, telegraph: '#88FF44', glyph: 'crosshair',
+    armor: false, tags: ['ranged'],
+    projectileSpeed: 280, ranged: true,
+    hazard: { radius: 50, tickFrames: 20, dmg: 5, lifeFrames: 200 }
+  },
+  king_crimson_erase: { // Diavolo / King Crimson (Act III final) -- erases the seconds between windup and impact
+    id: 'king_crimson_erase', label: 'EPITAPH', windupFrames: 20, activeFrames: 8, recoverFrames: 22, // 334/133/367ms -- legal minimum, not skipped
+    range: 95, dmgMult: 2.0, knockback: 28, hitstopMs: 130, telegraph: '#FFD700', glyph: 'chevron',
+    armor: true, tags: ['melee', 'heavy'],
+    hitbox: { x: 48, z: 0, w: 95, tags: ['melee', 'heavy'] }
+  },
+  made_in_heaven_acceleration: { // Enrico Pucci / Made in Heaven (Act IV true final) -- the world running faster
+    id: 'made_in_heaven_acceleration', label: 'ACCELERATION', windupFrames: 18, activeFrames: 8, recoverFrames: 16, // 300/133/267ms -- fastest recovery in the roster
+    range: 90, dmgMult: 1.8, knockback: 24, hitstopMs: 100, telegraph: '#FFFFFF', glyph: 'chevron',
+    armor: true, tags: ['melee', 'heavy'],
+    hitbox: { x: 45, z: 0, w: 90, tags: ['melee', 'heavy'] }
   }
 };
 

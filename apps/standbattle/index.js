@@ -11,6 +11,7 @@ import { drawShop, pickShopAction } from './shop.js';
 import { drawArchiveStub, pickArchiveContinue } from './archive_stub.js';
 import { drawReward, pickRewardChoice } from './rewards.js';
 import { drawTitle, drawComplete } from './scenes.js';
+import { drawStandSelect, pickStand } from './standselect.js';
 import {
   createFreshRunState, resolveNodeEntry, commitNode, onCombatWin, finishRunLoss,
   applyRewardChoice, applyEventChoice, applyRestChoice, applyShopAction, persistRun
@@ -119,10 +120,10 @@ export default {
       if (window.Snd) window.Snd.click();
     });
 
-    function newRun() {
+    function newRun(standId) {
       const seed = Date.now() + '-' + Math.floor(Math.random() * 1e9);
       state.runRng = createRng(seed);
-      state.runState = createFreshRunState(seed, state.runRng);
+      state.runState = createFreshRunState(seed, state.runRng, standId);
       state.scene = 'map';
       persistRun(state, env);
     }
@@ -134,7 +135,11 @@ export default {
 
     function handleClick(ev) {
       const { mx, my } = canvasXY(ev);
-      if (state.scene === 'title') { newRun(); if (window.Snd) window.Snd.open(); }
+      if (state.scene === 'title') { state.scene = 'standselect'; if (window.Snd) window.Snd.open(); }
+      else if (state.scene === 'standselect') {
+        const standId = pickStand(mx, my, W, H);
+        if (standId) { newRun(standId); if (window.Snd) window.Snd.select(); }
+      }
       else if (state.scene === 'map') {
         const id = pickNode(mx, my, state.runState.graph, state.runState, W);
         if (id) { resolveNodeEntry(state, id, env); if (window.Snd) window.Snd.select(); }
@@ -192,7 +197,8 @@ export default {
           musicSetIntensity(0);
           if (c.outcome === 'win') sfxVictory(); else sfxDefeat();
         }
-        drawCombat(g, W, H, c, tsec, dt, state.enteringNodeId);
+        const activeNode = state.runState.graph.nodes[state.enteringNodeId];
+        drawCombat(g, W, H, c, tsec, dt, activeNode && activeNode.scene);
       }
       else if (state.scene === 'map') drawMap(g, W, H, state.runState.graph, state.runState, tsec);
       else if (state.scene === 'reward') drawReward(g, W, H, state.currentOffer, state.runState, tsec);
@@ -201,6 +207,7 @@ export default {
       else if (state.scene === 'shop') drawShop(g, W, H, state.runState, state.shop, tsec);
       else if (state.scene === 'archive') drawArchiveStub(g, W, H, tsec);
       else if (state.scene === 'title') drawTitle(g, W, H, tsec, cleared);
+      else if (state.scene === 'standselect') drawStandSelect(g, W, H, tsec);
       else if (state.scene === 'complete') drawComplete(g, W, H, state.runState, tsec);
       info.textContent = state.scene === 'combat'
         ? 'A/D MOVE  W/S DEPTH  J/K/L ATTACK  SPACE STEP  SHIFT CLASH  G GUARD  U SPECIAL  I RUSH  F PROJECT'

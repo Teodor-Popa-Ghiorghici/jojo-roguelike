@@ -68,7 +68,7 @@ export function drawTitle(g, W, H, tsec, cleared) {
     alpha: 0.55 + 0.45 * Math.sin(tsec * 3)
   });
   if (cleared) {
-    text(g, 'MORIOH CLEARED', cx, H - 24, { scale: 1, align: 'center', color: '#5FD672' });
+    text(g, 'THE RUN HAS BEEN CLEARED', cx, H - 24, { scale: 1, align: 'center', color: '#5FD672' });
   }
 }
 
@@ -79,11 +79,11 @@ export function drawComplete(g, W, H, runState, tsec) {
   for (let i = 0; i < 3; i++) {
     ring(g, W / 2, H / 2 - 10, ((t * 26 + i * 40) % 120), 1, '#B02F72', 0.4);
   }
-  text(g, 'MORIOH IS QUIET AGAIN', W / 2, H / 2 - 40, {
+  text(g, 'THE WORLD HOLDS TOGETHER', W / 2, H / 2 - 40, {
     scale: 3, align: 'center', color: '#FFE86A', outline: '#3A2A06', shadow: '#8A5A0E', shadowDy: 2,
     wave: { amp: 1, freq: 3, t }
   });
-  text(g, 'KILLER QUEEN HAS BEEN STOPPED.', W / 2, H / 2 - 6, { scale: 1, align: 'center', color: '#FFC2D8' });
+  text(g, 'MADE IN HEAVEN HAS BEEN STOPPED.', W / 2, H / 2 - 6, { scale: 1, align: 'center', color: '#FFC2D8' });
   text(g, 'HP REMAINING  ' + Math.round(runState.hp) + ' / ' + runState.maxHp, W / 2, H / 2 + 14, {
     scale: 2, align: 'center', color: '#5FD672', outline: '#0E4A22'
   });

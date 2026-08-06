@@ -27,9 +27,6 @@ import { zToYOffset, depthSort, cameraTargetX } from './render_adapter.js';
 export { WORLD_W, GROUND_Y };
 
 const ENEMY_ART = { morioh_thug: drawThug, angelo: drawAngelo };
-const SCENE_FOR = {
-  n1: 'alley', n2: 'street', n3: 'street', n4: 'street', n5: 'park', n6: 'store'
-};
 
 /* each arena's key light, used for the rim on every sprite so characters
    are lit by the scene they are standing in */
@@ -37,7 +34,17 @@ const SCENE_LIGHT = {
   alley: { color: '#FFD79B', alpha: 0.34 },
   street: { color: '#FFC98A', alpha: 0.42 },
   park: { color: '#9FC0FF', alpha: 0.34 },
-  store: { color: '#CFE0FF', alpha: 0.38 }
+  store: { color: '#CFE0FF', alpha: 0.38 },
+  // Phase 9d Acts II-IV -- one rim tone per new scene_defs.js entry.
+  bazaar: { color: '#FFE9B0', alpha: 0.44 },
+  nile_docks: { color: '#FFDE8A', alpha: 0.36 },
+  train_car: { color: '#C8D8FF', alpha: 0.4 },
+  vineyard: { color: '#FFD79B', alpha: 0.36 },
+  piazza: { color: '#F2A96A', alpha: 0.4 },
+  villa: { color: '#FFC2D8', alpha: 0.42 },
+  ruin: { color: '#828DAB', alpha: 0.3 },
+  voidscape: { color: '#FFFFFF', alpha: 0.4 },
+  throneroom: { color: '#FFFFFF', alpha: 0.3 }
 };
 
 /* Camera tracking is the only place render.js reaches into the render
@@ -90,7 +97,7 @@ function drawStand(g, player, stand, pose, camX, tsec) {
     outline: '#160A28', thickOutline: true,
     rim: { color: '#D5A8FF', alpha: 0.5, dx: -1, dy: -2 },
     alpha: 0.55 + manifest * 0.45,
-    tint: { color: '#B98BFF', alpha: 0.18 * (1 - manifest) }
+    tint: { color: player.tint || '#B98BFF', alpha: 0.18 * (1 - manifest) }
   });
 }
 
@@ -157,7 +164,7 @@ function drawFighter(g, f, pose, camX, tsec, isPlayer, phaseIndex, rim) {
 
 /* ---- entry point ------------------------------------------------------- */
 
-export function drawCombat(g, W, H, combat, tsec, dtMs, nodeId) {
+export function drawCombat(g, W, H, combat, tsec, dtMs, sceneId) {
   if (!combat._fx) {
     combat._fx = createFx();
     wireFx(combat, combat._fx, GROUND_Y);
@@ -178,7 +185,7 @@ export function drawCombat(g, W, H, combat, tsec, dtMs, nodeId) {
     if (e.hp > 0 || (e.deathTimer || 0) > 0) enemyPoses.set(e, enemyPose(e, tsec, dt));
   });
 
-  const scene = SCENE_FOR[nodeId] || 'street';
+  const scene = sceneId || 'street';
   const rim = SCENE_LIGHT[scene];
   if (!frozen) sceneEvents(combat, fx, ppose, camX, tsec);
 

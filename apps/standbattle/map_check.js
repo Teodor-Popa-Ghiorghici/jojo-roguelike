@@ -1,20 +1,20 @@
-/* Map generator regression check — Phase 8 deliverable 1/4. Same
-   standalone-runnable pattern as fairness_check.js/encounter_check.js/
-   fragment_check.js:
+/* Map generator regression check — Phase 8 deliverable 1/4, generalized
+   to every Act in Phase 9d. Same standalone-runnable pattern as
+   fairness_check.js/encounter_check.js/fragment_check.js:
      node apps/standbattle/map_check.js
 
-   Proves, over real seeds (not a synthetic fixture): every generated
-   Act I map satisfies its own declarative constraints (map_data.js's
-   ACT1_CONSTRAINTS), the resample-loop retry count stays in a sane
+   Proves, over real seeds (not a synthetic fixture) and over every Act in
+   map_data.js's ACT_CONFIGS: every generated map satisfies its own
+   declarative constraints, the resample-loop retry count stays in a sane
    range (mission's own bar), and the pity guarantee still holds end to
    end once the Yen-reward branch (economy.js) can skip an offer
    entirely -- not just in isolation the way fragment_check.js already
    proves it. */
 
 import { createRng } from './rng.js';
-import { generateAct1Map } from './map_gen.js';
+import { generateActMap } from './map_gen.js';
 import { checkAll } from './map_constraints.js';
-import { ACT1_CONSTRAINTS } from './map_data.js';
+import { ACT_CONFIGS } from './map_data.js';
 import { createRunFragmentState, generateOffer, skipOfferForPity, PITY_THRESHOLD } from './fragment_offers.js';
 import { decideCombatRewardKind } from './economy.js';
 
@@ -53,38 +53,42 @@ function worstPityGap(graph, rng) {
 export function runMapChecks(n = 500) {
   const checks = [];
   const check = (label, cond, detail) => checks.push({ label, ok: cond, detail });
+  const acts = Object.keys(ACT_CONFIGS).map(Number);
 
   let constraintFailures = 0;
   let noRestPath = 0, noShopPath = 0;
   let worstGapOverall = 0, repairedCount = 0;
   const attempts = [];
 
-  for (let i = 0; i < n; i++) {
-    const rng = createRng('mapcheck-' + i);
-    const graph = generateAct1Map(rng.stream('map'));
-    attempts.push(graph.attempts);
-    if (graph.repaired) repairedCount++;
-    if (!checkAll(graph, ACT1_CONSTRAINTS).pass) constraintFailures++;
-    graph.paths.forEach(p => {
-      if (!p.some(id => graph.nodes[id].type === 'rest')) noRestPath++;
-      if (!p.some(id => graph.nodes[id].type === 'shop')) noShopPath++;
-    });
-    const gap = worstPityGap(graph, rng.stream('rewards'));
-    if (gap > worstGapOverall) worstGapOverall = gap;
-  }
+  acts.forEach(act => {
+    for (let i = 0; i < n; i++) {
+      const rng = createRng(`mapcheck-act${act}-${i}`);
+      const graph = generateActMap(rng.stream('map'), act);
+      attempts.push(graph.attempts);
+      if (graph.repaired) repairedCount++;
+      if (!checkAll(graph, ACT_CONFIGS[act].constraints).pass) constraintFailures++;
+      graph.paths.forEach(p => {
+        if (!p.some(id => graph.nodes[id].type === 'rest')) noRestPath++;
+        if (!p.some(id => graph.nodes[id].type === 'shop')) noShopPath++;
+      });
+      const gap = worstPityGap(graph, rng.stream('rewards'));
+      if (gap > worstGapOverall) worstGapOverall = gap;
+    }
+  });
 
+  const total = acts.length * n;
   attempts.sort((a, b) => a - b);
-  const mean = attempts.reduce((s, a) => s + a, 0) / n;
-  const p95 = attempts[Math.floor(n * 0.95)];
+  const mean = attempts.reduce((s, a) => s + a, 0) / total;
+  const p95 = attempts[Math.floor(total * 0.95)];
 
-  check(`${n} seeds all satisfy their declarative constraints`, constraintFailures === 0, `${constraintFailures} failure(s)`);
+  check(`${total} seeds across ${acts.length} Acts all satisfy their declarative constraints`, constraintFailures === 0, `${constraintFailures} failure(s)`);
   check('no path missing a Rest', noRestPath === 0, `${noRestPath} path(s)`);
   check('no path missing a Shop', noShopPath === 0, `${noShopPath} path(s)`);
-  check(`resample retry count stays sane (mean ${mean.toFixed(1)}, p95 ${p95}, max ${attempts[n - 1]})`, p95 < 40, `repair floor hit ${repairedCount}/${n} times (${(repairedCount / n * 100).toFixed(2)}%)`);
+  check(`resample retry count stays sane (mean ${mean.toFixed(1)}, p95 ${p95}, max ${attempts[total - 1]})`, p95 < 40, `repair floor hit ${repairedCount}/${total} times (${(repairedCount / total * 100).toFixed(2)}%)`);
   check(`pity never exceeds ${PITY_THRESHOLD} reward-nodes without a Rare+ (worst observed: ${worstGapOverall})`, worstGapOverall <= PITY_THRESHOLD);
 
   const failures = checks.filter(c => !c.ok).length;
-  return { pass: failures === 0, failures, checks, retryStats: { mean, p95, max: attempts[n - 1], repairedCount, n } };
+  return { pass: failures === 0, failures, checks, retryStats: { mean, p95, max: attempts[total - 1], repairedCount, n: total } };
 }
 
 if (typeof process !== 'undefined' && import.meta.url === `file://${process.argv[1]}`) {

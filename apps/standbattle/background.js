@@ -14,28 +14,11 @@ import { cached } from './layer.js';
 import { poly, px, dither, ellipse, disc, vband, line } from './draw.js';
 import { facade, windows, acUnit, fireEscape, shopSign, hills, cloudPuff } from './bg_props.js';
 import { buildNear, buildGround } from './bg_scenes.js';
-import { SKY, TOWN, FX, haze, S, SH, BASE, LT, RIM } from './palette.js';
+import { TOWN, FX, haze, S, SH, BASE, LT, RIM } from './palette.js';
+export { SCENES } from './scene_defs.js';
+import { SCENES } from './scene_defs.js';
 
 const LW = 760;
-
-export const SCENES = {
-  alley: {
-    sky: SKY.dusk, sunX: 0.22, sunY: 0.30, sun: '#FFD79B', lit: 0.55,
-    walls: [TOWN.wallB, TOWN.wallA], ground: TOWN.road, kind: 'alley', hazeTo: '#5B3A7A'
-  },
-  street: {
-    sky: SKY.dusk, sunX: 0.78, sunY: 0.36, sun: '#FFE6B0', lit: 0.4,
-    walls: [TOWN.wallA, TOWN.wallB, TOWN.wallC], ground: TOWN.road, kind: 'street', hazeTo: '#9E4E76'
-  },
-  park: {
-    sky: SKY.night, sunX: 0.7, sunY: 0.2, sun: '#EAF2FF', lit: 0.3,
-    walls: [TOWN.wallC, TOWN.wallA], ground: TOWN.walk, kind: 'park', hazeTo: '#2C3C72'
-  },
-  store: {
-    sky: SKY.night, sunX: 0.5, sunY: 0.18, sun: '#C8D8FF', lit: 0.85,
-    walls: [TOWN.wallA, TOWN.wallC], ground: TOWN.walk, kind: 'store', hazeTo: '#1D2A55'
-  }
-};
 
 /* ---- layer builders --------------------------------------------------- */
 
