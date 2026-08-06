@@ -87,6 +87,11 @@ export function createCombat(enemyOrEncounterDef, ownedFragments, opts, rng) {
   const player = createPlayerFighter(standDef, ARENA_MIN + 122);
   player.maxPersistence = dispatcher.runQuery('getMaxPersistence', player.maxPersistence, { entity: player });
   clampPersistence(player);
+  /* No bespoke sprite per Stand yet (data.js's STANDS.<id>.tint comment) --
+     a silhouette tint is the cheap generic stand-in, read by render.js's
+     drawFighter (User body, already generic over f.tint) and drawStand
+     (the Stand's own materialize glow). */
+  player.tint = standDef.tint || null;
   /* Phase 9d: a Stand's own innate ability (Killer Queen's Bites the
      Dust utility) installs through the exact same seam a Fragment does --
      data.js names the effects, installFragment() doesn't care whether the

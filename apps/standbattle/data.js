@@ -32,7 +32,12 @@ export const STANDS = {
     source: 'Stardust Crusaders (Part 3)',
     stats: { power: 6, speed: 9, range: 4, persistence: 6, precision: 9, devPotential: 3 },
     moves: { light: 'sc_light', medium: 'sc_medium', heavy: 'sc_heavy', special: 'sc_special' },
-    standRush: 'sc_hora_rush'
+    standRush: 'sc_hora_rush',
+    /* No bespoke sprite yet (same flagged gap as boss art, phase-6.md):
+       render.js reuses Star Platinum/Jotaro's silhouette for every Stand,
+       tinted per this field -- the same generic `.tint` silhouette-wash
+       mechanism enemy/boss defs already use, not a new one. */
+    tint: '#8FB8E8'
   },
   hierophant_green: {
     id: 'hierophant_green',
@@ -43,7 +48,8 @@ export const STANDS = {
     source: 'Stardust Crusaders (Part 3)',
     stats: { power: 4, speed: 5, range: 9, persistence: 7, precision: 6, devPotential: 3 },
     moves: { light: 'hg_light', medium: 'hg_medium', heavy: 'hg_heavy', special: 'hg_special' },
-    standRush: 'hg_rush'
+    standRush: 'hg_rush',
+    tint: '#4FE07A'
   },
   /* Same character/Stand id as data_bosses.js's BOSS_KILLER_QUEEN --
      separate registries (STANDS vs BOSSES), no collision, and exactly the
@@ -58,6 +64,7 @@ export const STANDS = {
     stats: { power: 6, speed: 6, range: 5, persistence: 7, precision: 7, devPotential: 4 },
     moves: { light: 'kq_light', medium: 'kq_medium', heavy: 'kq_heavy', special: 'kq_special' },
     standRush: 'kq_bites_the_dust',
+    tint: '#FF6BA0',
     /* GDD §2.3: Bites the Dust must be a run-altering utility effect, not
        a raw damage tool -- combat.js installs this once per fight through
        the same seam a Fragment uses (installFragment), see

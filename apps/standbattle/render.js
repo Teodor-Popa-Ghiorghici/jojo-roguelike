@@ -97,7 +97,7 @@ function drawStand(g, player, stand, pose, camX, tsec) {
     outline: '#160A28', thickOutline: true,
     rim: { color: '#D5A8FF', alpha: 0.5, dx: -1, dy: -2 },
     alpha: 0.55 + manifest * 0.45,
-    tint: { color: '#B98BFF', alpha: 0.18 * (1 - manifest) }
+    tint: { color: player.tint || '#B98BFF', alpha: 0.18 * (1 - manifest) }
   });
 }
 
