@@ -9,7 +9,7 @@
    failed. */
 
 import { runHeadlessFight } from '../headless_harness.js';
-import { ENEMIES, BOSS_KILLER_QUEEN } from '../data.js';
+import { ENEMIES, BOSSES } from '../data.js';
 import { createRng } from '../rng.js';
 import { generateAct1Map } from '../map_gen.js';
 import { checkAll } from '../map_constraints.js';
@@ -21,11 +21,14 @@ const verbose = process.argv.includes('--verbose');
 const runsArg = process.argv.find(a => a.startsWith('--runs='));
 const RUNS = runsArg ? parseInt(runsArg.split('=')[1], 10) : 50;
 
+/* Phase 9d: every registered boss (data_bosses.js's BOSSES), not just
+   Killer Queen -- a 10th boss added to that registry is swept for free,
+   never a second line here. */
 const TARGETS = [
   { id: 'morioh_thug', def: ENEMIES.morioh_thug },
   { id: 'knife_thug', def: ENEMIES.knife_thug },
   { id: 'brute', def: ENEMIES.brute },
-  { id: 'killer_queen', def: BOSS_KILLER_QUEEN }
+  ...Object.entries(BOSSES).map(([id, def]) => ({ id, def }))
 ].filter(t => t.def);
 
 const groups = TARGETS.map(({ id, def }) => {

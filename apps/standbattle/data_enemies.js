@@ -171,5 +171,22 @@ export const ENEMIES = {
     attackPatterns: ['quick_stab'],
     profile: 'support', cost: 2, clashable: true, tint: PAL.yellow,
     role: 'caller', summon: { type: 'morioh_thug', delayFrames: 720, max: 1, hpMult: 1 }
+  },
+  /* Boss summon fodder (Phase 9d) -- same exemption as puppet_minion
+     above: not a 15th/16th roster type, never picked by the budget
+     generator's own pool, only ever spawned via a boss def's `summon`
+     field (Illuso's mirror images, Funny Valentine's parallel-universe
+     equivalents -- each boss's one bespoke signature, data_bosses.js). */
+  illuso_mirror: {
+    id: 'illuso_mirror', name: 'MIRROR IMAGE', shortName: 'MIRROR', baseType: 'melee',
+    hp: 20, power: 3, speedPx: 110, precision: 4, poise: 10,
+    attackPatterns: ['quick_stab'],
+    profile: 'flanker', cost: 1, clashable: true, tint: PAL.lmagenta
+  },
+  valentine_parallel: {
+    id: 'valentine_parallel', name: 'PARALLEL VALENTINE', shortName: 'PARALLEL', baseType: 'melee',
+    hp: 30, power: 4, speedPx: 115, precision: 5, poise: 14,
+    attackPatterns: ['sweep'],
+    profile: 'aggressor', cost: 2, clashable: true, tint: PAL.lred
   }
 };
