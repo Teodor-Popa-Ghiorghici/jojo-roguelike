@@ -35,23 +35,59 @@ import {
 } from './telemetry.js';
 import { wireCombatAudio, sfxActComplete } from './audio.js';
 import { musicSetIntensity } from './music.js';
+/* Phase 10 meta. Note which side of the firewall each of these sits on:
+   createMenaceProfile is Track B and returns nothing but numbers;
+   settleRun is the meta payout and writes only the meta blob. Neither the
+   Archive's unlock sets nor Fate ever reach anything below. */
+import { createMenaceProfile, menaceRankOf } from './meta_menace.js';
+import { settleRun } from './run_end.js';
+import { createMissionCounters, attachMissionTracker, noteNodeCleared } from './mission_tracker.js';
+import { defaultAspectFor } from './aspects.js';
 
 function defaultUpgradePoints(standId) {
   return resolveUpgradeSlotCount({ stand: STANDS[standId] || STANDS.star_platinum }, createStatPipeline());
 }
 
-export function createFreshRunState(seed, rng, standId) {
+/* `loadout` (Phase 10) is the hub's Stand-rack choice: which Aspect this
+   run runs, which Keepsake (if any) it starts with, and the Menace pact
+   the player opted into for this Stand. All three are chosen before the
+   run and never change during it, so they live on runState and ride into
+   every fight the same way standId already does. */
+export function createFreshRunState(seed, rng, standId, loadout) {
+  const id = standId || 'star_platinum';
   const fragState = createRunFragmentState();
-  fragState.upgradePoints = defaultUpgradePoints(standId);
+  fragState.upgradePoints = defaultUpgradePoints(id);
+  const lo = loadout || {};
+  const aspect = lo.aspectId || (defaultAspectFor(id) || {}).id || null;
   const rs = {
-    seed, standId: standId || 'star_platinum', act: 1, graph: null, nodeId: null, visited: [],
+    seed, standId: id, act: 1, graph: null, nodeId: null, visited: [],
     hp: 100, maxHp: 100, yen: 0, tension: 0,
     rerollsUsed: 0, removalsUsed: 0,
+    aspectId: aspect,
+    /* Track A's only reach into a run: a list of donor ID STRINGS, which
+       fragment_offers.js uses to decide what may be offered. Strings in,
+       strings out -- there is no numeric channel from the Archive to here
+       (spec §7), which is the entire point of the two-track split. */
+    donors: lo.donors || null,
+    menacePact: lo.menacePact || {},
+    missionCounters: createMissionCounters(),
+    bestChain: 0,
+    upgradePointsMax: fragState.upgradePoints,
     telemetry: createTelemetryCollector(),
     ...fragState
   };
+  /* A Keepsake is an ordinary owned Relic from the engine's point of view
+     -- it just arrives at run start instead of from a Treasure node. */
+  if (lo.keepsakeId) rs.relics = [...(rs.relics || []), lo.keepsakeId];
   enterAct(rs, rng);
   return rs;
+}
+
+/* Track B's one output, resolved once per fight from the run's pact.
+   BASE_PROFILE (an empty pact) is the identity, so a player who never
+   opens the Menace board gets exactly the pre-Phase-10 numbers. */
+export function menaceProfileFor(runState) {
+  return createMenaceProfile(runState.menacePact);
 }
 
 export function persistRun(state, env) { env.saveStore.saveRun(state.runState); }
@@ -69,7 +105,15 @@ function startCombatForNode(state, env, node) {
   const rs = state.runState;
   // Phase 10: every owned Relic/Duo/Disc rides into the fight the same
   // way owned Fragments already did -- see combat.js's install block.
-  const opts = { shakeEnabled: env.shakeEnabled, relics: rs.relics, duos: rs.duosOwned, discs: rs.discsBySlot, standId: rs.standId };
+  /* Phase 10: the Menace profile and the chosen Aspect ride in alongside
+     the build. `menace` is Track B's frozen number struct; `aspectId` is
+     Track A content. combat.js consumes them through two separate seams
+     that never see each other. */
+  const menace = menaceProfileFor(rs);
+  const opts = {
+    shakeEnabled: env.shakeEnabled, relics: rs.relics, duos: rs.duosOwned, discs: rs.discsBySlot,
+    standId: rs.standId, aspectId: rs.aspectId, menace, menaceRank: menaceRankOf(rs.menacePact)
+  };
   let target;
   if (node.type === 'boss') { target = BOSSES[node.boss]; }
   else if (node.encounter) { target = tensionScaledEncounter(ENCOUNTERS[node.encounter], rs.tension); }
@@ -86,6 +130,11 @@ function startCombatForNode(state, env, node) {
   combat.player.maxHp = rs.maxHp;
   combat.debug = env.debugEnabled;
   wireCombatAudio(combat);
+  /* Missions observe the fight through hooks.js's read-only `on` form --
+     no new sim instrumentation, and nothing here can write combat state
+     (invariant 8). Counters live on runState so they span the whole run. */
+  attachMissionTracker(combat, rs.missionCounters);
+  combat.dispatcher.fire('onFloorStart', { act: rs.act, node });
   musicSetIntensity(1);
   state.combat = combat;
   state.combatStartTsec = env.tsec;
@@ -110,7 +159,12 @@ function enterShop(state, env) {
 export function enterReward(state, env, forceRarePity) {
   const rs = state.runState;
   if (forceRarePity) rs.nodesSinceRare = Math.max(rs.nodesSinceRare, PITY_THRESHOLD);
-  const offer = generateOffer(state.runRng.stream('rewards'), rs, tensionRarityMult(rs.tension));
+  /* Track B's Scarcity condition (GDD §8.3) is one clamp on the offer
+     length here -- an entirely numeric change, applied where the number is
+     already decided, never a change to which Fragments exist. */
+  const menace = menaceProfileFor(rs);
+  const full = generateOffer(state.runRng.stream('rewards'), rs, tensionRarityMult(rs.tension));
+  const offer = menace.offerCountDelta ? full.slice(0, Math.max(1, full.length + menace.offerCountDelta)) : full;
   recordOffer(rs.telemetry, offer);
   state.currentOffer = offer;
   state.scene = 'reward';
@@ -154,6 +208,8 @@ export function commitNode(state, env) {
   state.enteringNodeId = null;
   musicSetIntensity(0);
   recordTension(rs.telemetry, rs.tension);
+  noteNodeCleared(rs.missionCounters, rs.graph.nodes[rs.nodeId]);
+  if (state.combat) state.combat.dispatcher.fire('onNodeClear', { node: rs.graph.nodes[rs.nodeId], act: rs.act });
   if (rs.graph.nodes[rs.nodeId].type === 'boss') {
     sfxActComplete();
     if (rs.act < 4) {
@@ -162,14 +218,14 @@ export function commitNode(state, env) {
       // the run continues with its build/HP/economy intact, never resets.
       rs.act += 1;
       enterAct(rs, state.runRng);
+      // Pristine Condition (GDD §8.3): each new act starts capped, never healed up to it.
+      const startPct = menaceProfileFor(rs).actStartHpPct;
+      if (startPct < 1) rs.hp = Math.min(rs.hp, Math.round(rs.maxHp * startPct));
       state.scene = 'map';
       persistRun(state, env);
     } else {
-      state.scene = 'complete';
       env.meta.cleared = true;
-      env.saveStore.saveMeta(env.meta);
-      appendRunSummary(env.ctx, { seed: rs.seed, stand: rs.standId, actReached: rs.act, killer: null, collector: rs.telemetry });
-      env.saveStore.clearRun();
+      finishRun(state, env, 'win', null);
     }
   } else {
     state.scene = 'map';
@@ -177,13 +233,24 @@ export function commitNode(state, env) {
   }
 }
 
+/* GDD §9.5: a win and a loss now leave the run by the SAME door. Both pay
+   Fate, Archive entries, Bond progress and Mission progress, and both land
+   on the TO BE CONTINUED screen -- "death is never zero" is a property of
+   there being only one exit, not of two exits that happen to agree. */
+function finishRun(state, env, outcome, killer) {
+  const rs = state.runState;
+  if (state.combat) state.combat.dispatcher.fire('onRunEnd', { outcome, act: rs.act });
+  state.summary = settleRun(env.meta, rs, { outcome, killer });
+  env.saveStore.saveMeta(env.meta);
+  appendRunSummary(env.ctx, { seed: rs.seed, stand: rs.standId, actReached: rs.act, killer, collector: rs.telemetry });
+  env.saveStore.clearRun();
+  state.scene = 'continued';
+}
+
 export function finishRunLoss(state, env) {
   const rs = state.runState;
   const node = rs.graph.nodes[state.enteringNodeId || rs.nodeId];
-  const killer = node.boss || node.encounter || node.enemy || null;
-  appendRunSummary(env.ctx, { seed: rs.seed, stand: rs.standId, actReached: rs.act, killer, collector: rs.telemetry });
-  env.saveStore.clearRun();
-  state.scene = 'title';
+  finishRun(state, env, 'loss', node.boss || node.encounter || node.enemy || null);
 }
 
 export function onCombatWin(state, env) {
@@ -207,91 +274,4 @@ export function onCombatWin(state, env) {
   } else {
     enterReward(state, env, false);
   }
-}
-
-/* Phase 10: `kind` picks apply function AND which field holds the taken
-   id -- fragment/duo offers (combat reward, Treasure was this too before
-   Phase 10) vs. relic/disc offers (Treasure now, item_offers.js). */
-export function applyRewardChoice(state, idx, env) {
-  const cand = state.currentOffer[idx];
-  const rs = state.runState;
-  let takenId;
-  if (cand.kind === 'relic' || cand.kind === 'disc') {
-    applyTreasureChoice(rs, cand);
-    takenId = cand.kind === 'relic' ? cand.relic.id : cand.disc.id;
-  } else {
-    applyOffer(rs, cand);
-    takenId = cand.kind === 'duo' ? cand.duo.id : cand.frag.id;
-  }
-  recordTaken(rs.telemetry, takenId);
-  state.currentOffer = null;
-  commitNode(state, env);
-}
-
-export function applyEventChoice(state, idx, env) {
-  const choice = state.currentEvent.choices[idx];
-  if (choice.kind === 'fragment') { enterReward(state, env, false); return; }
-  const rs = state.runState;
-  rs.hp = Math.min(rs.maxHp, rs.hp + choice.amount);
-  commitNode(state, env);
-}
-
-export function applyRestChoice(state, choiceId, env) {
-  const rs = state.runState;
-  if (choiceId === 'heal') {
-    rs.hp = Math.min(rs.maxHp, rs.hp + rs.maxHp * 0.6);
-  } else if (choiceId === 'upgrade') {
-    const slot = pickUpgradeSlot(rs);
-    if (!slot) return;
-    rs.fragmentsBySlot[slot].level += 1;
-    rs.upgradePoints -= 1;
-    recordTaken(rs.telemetry, rs.fragmentsBySlot[slot].id);
-  } else if (choiceId === 'tension') {
-    raiseTension(rs, 1);
-    enterReward(state, env, false);
-    return;
-  }
-  commitNode(state, env);
-}
-
-export function applyShopAction(state, action, env) {
-  const rs = state.runState;
-  if (action.type === 'buy') {
-    const offer = state.shop.offer[0];
-    const cost = fragmentPrice(offer.frag.rarity);
-    if (!canAfford(rs, cost)) return;
-    spend(rs, cost); recordYen(rs.telemetry, 0, cost);
-    applyOffer(rs, offer);
-    recordTaken(rs.telemetry, offer.frag.id);
-    state.shop.offer = [];
-  } else if (action.type === 'heal') {
-    const cost = healCost(rs.maxHp - rs.hp);
-    if (!canAfford(rs, cost)) return;
-    spend(rs, cost); recordYen(rs.telemetry, 0, cost);
-    rs.hp = rs.maxHp;
-  } else if (action.type === 'reroll') {
-    const cost = rerollCost(rs);
-    if (!canAfford(rs, cost)) return;
-    spend(rs, cost); recordYen(rs.telemetry, 0, cost);
-    rs.rerollsUsed += 1;
-    const offer = generateOffer(state.runRng.stream('rewards'), rs, tensionRarityMult(rs.tension)).slice(0, 1);
-    recordOffer(rs.telemetry, offer);
-    state.shop.offer = offer;
-  } else if (action.type === 'remove') {
-    if (!canAfford(rs, removalCost(rs))) return;
-    state.shop.removeMode = true;
-  } else if (action.type === 'removeSlot') {
-    const cost = removalCost(rs);
-    spend(rs, cost); recordYen(rs.telemetry, 0, cost);
-    rs.removalsUsed += 1;
-    delete rs.fragmentsBySlot[action.slot];
-    state.shop.removeMode = false;
-  } else if (action.type === 'removeCancel') {
-    state.shop.removeMode = false;
-  } else if (action.type === 'leave') {
-    state.shop = null;
-    commitNode(state, env);
-    return;
-  }
-  persistRun(state, env);
 }

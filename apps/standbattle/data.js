@@ -73,6 +73,77 @@ export const STANDS = {
       { hook: 'onMoveStart', fn: 'armLethalSaveOnRush', data: {} },
       { hook: 'onDamageIncoming', fn: 'preventLethalIfArmed', data: {} }
     ]
+  },
+  /* Phase 10 (GDD §9.1): Stands 5-8, the Archive's headline unlocks. Each
+     one is composition over the Phase 9d engine exactly as 9d was
+     composition over 9a's -- a CONTROL_SCHEMES pick, its own stat line,
+     its own innate ability, and a tint. FLAGGED GAP, inherited from 9d
+     rather than introduced here: they reuse an existing moveset family
+     (close -> Star Platinum's, mid -> Silver Chariot's, long -> Hierophant
+     Green's) instead of carrying four bespoke ones, so they differ by
+     stats, innate and Aspect rather than by animation. Authoring four more
+     `moves_<id>.js` sets is a roster phase's work, not a meta phase's. */
+  crazy_diamond: {
+    id: 'crazy_diamond',
+    character: 'Josuke Higashikata',
+    standName: 'Crazy Diamond',
+    role: 'restorer',
+    controlScheme: 'close',
+    source: 'Diamond is Unbreakable (Part 4)',
+    stats: { power: 8, speed: 6, range: 2, persistence: 7, precision: 5, devPotential: 4 },
+    moves: { light: 'sp_light', medium: 'sp_medium', heavy: 'sp_heavy', special: 'sp_barrage' },
+    standRush: 'sp_ora_rush',
+    tint: '#B7A0FF',
+    /* "Return it to how it was" as a utility, never a heal-on-demand:
+       combat.js's spawnAnchor is the only restore point that exists. */
+    innateAbilities: [
+      { hook: 'onPerfectClash', fn: 'returnToAnchor', data: {} }
+    ]
+  },
+  gold_experience: {
+    id: 'gold_experience',
+    character: 'Giorno Giovanna',
+    standName: 'Gold Experience',
+    role: 'creator',
+    controlScheme: 'close',
+    source: 'Golden Wind (Part 5)',
+    stats: { power: 6, speed: 7, range: 3, persistence: 8, precision: 6, devPotential: 5 },
+    moves: { light: 'sp_light', medium: 'sp_medium', heavy: 'sp_heavy', special: 'sp_barrage' },
+    standRush: 'sp_ora_rush',
+    tint: '#FFD24A',
+    innateAbilities: [
+      { hook: 'onDamageTaken', fn: 'reflectPctDamageToAttacker', data: { pct: 0.2 } }
+    ]
+  },
+  sticky_fingers: {
+    id: 'sticky_fingers',
+    character: 'Bruno Bucciarati',
+    standName: 'Sticky Fingers',
+    role: 'infiltrator',
+    controlScheme: 'mid',
+    source: 'Golden Wind (Part 5)',
+    stats: { power: 7, speed: 7, range: 4, persistence: 6, precision: 7, devPotential: 4 },
+    moves: { light: 'sc_light', medium: 'sc_medium', heavy: 'sc_heavy', special: 'sc_special' },
+    standRush: 'sc_hora_rush',
+    tint: '#3FC8D8',
+    innateAbilities: [
+      { hook: 'onHitResolve', fn: 'stripArmorIfBroken', data: {} }
+    ]
+  },
+  hermit_purple: {
+    id: 'hermit_purple',
+    character: 'Joseph Joestar',
+    standName: 'Hermit Purple',
+    role: 'diviner',
+    controlScheme: 'long',
+    source: 'Stardust Crusaders (Part 3)',
+    stats: { power: 3, speed: 6, range: 9, persistence: 8, precision: 8, devPotential: 5 },
+    moves: { light: 'hg_light', medium: 'hg_medium', heavy: 'hg_heavy', special: 'hg_special' },
+    standRush: 'hg_rush',
+    tint: '#A64FD0',
+    innateAbilities: [
+      { hook: 'onProjectStart', fn: 'applyStatusToNearby', data: { status: 'mark', stacks: 1, count: 2, radius: 240 } }
+    ]
   }
 };
 

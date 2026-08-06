@@ -38,6 +38,9 @@ import { createEncounter, normalizeEncounter, stepEncounter } from './encounter.
 import { createTokenSystem } from './token.js';
 import { stepHazards } from './hazards.js';
 import { ARENA_MIN, FRAME_MS } from './constants.js';
+import { ASPECTS, aspectAsContentDef } from './aspects.js';
+import { BASE_PROFILE } from './meta_menace.js';
+import { PRIORITY } from './hooks.js';
 
 const INPUT_BUFFER_FRAMES = 9; // 150ms -- matches tech §3.6's "9-frame buffer" exactly
 const TOKEN_MELEE_COUNT = 2; // GDD §16 -- 3 under Menace's Crowded condition, not implemented yet
@@ -99,6 +102,31 @@ export function createCombat(enemyOrEncounterDef, ownedFragments, opts, rng) {
   if (standDef.innateAbilities) {
     installFragment(dispatcher, { id: standDef.id + ':innate', effects: standDef.innateAbilities }, 1);
   }
+  /* Phase 10 (GDD §9.1): the run's Aspect installs through that same
+     seam, and that is the entire integration -- an Aspect is effects and
+     queries over the existing verb vocabulary, so it needs no engine
+     support of its own. Track A gates WHICH Aspects the rack offers; by
+     the time one reaches here it is indistinguishable from a Fragment. */
+  const aspectDef = ASPECTS[opts.aspectId];
+  if (aspectDef) installFragment(dispatcher, aspectAsContentDef(aspectDef), 1);
+
+  /* Track B (GDD §8.3), and the whole of its combat-side application.
+     `menace` is meta_menace.js's frozen number struct; an empty pact
+     resolves to BASE_PROFILE, whose every field is the identity, so the
+     four lines below are exact no-ops for a default run.
+
+     Killing Intent rides the ordinary getDamage query gated on the
+     attacker NOT being the player -- the same choke point every Fragment
+     uses, at MULTIPLY priority so it composes rather than overwrites.
+     Note what is absent: nothing here touches windup frames. Sharpened
+     Instinct reaches recovery only, via resolvers.js's resolvePatternFrames,
+     so the spec §5.1 telegraph floor is unreachable from a pact by
+     construction and not merely by the numbers happening to be small. */
+  const menace = opts.menace || BASE_PROFILE;
+  if (menace.enemyDamageMult !== 1) {
+    dispatcher.query('getDamage', PRIORITY.MULTIPLY, (v, qctx) =>
+      (qctx && qctx.isPlayerAttacker) ? v : v * menace.enemyDamageMult, 'menace');
+  }
   /* Phase 10 (Crazy Diamond donor's "return-to-position" identity, GDD
      §6.1): a fixed snapshot of the User's own starting spot, read by
      item_effect_lib.js's returnToAnchor -- no per-encounter "restore
@@ -136,7 +164,12 @@ export function createCombat(enemyOrEncounterDef, ownedFragments, opts, rng) {
     hazards: [], // GDD §4.6 Phase 2's "rule" (hazards.js) -- empty for every fight that never spawns one
     timeStopFrames: 0, // Phase 7 (GDD §6.1's The World donor) -- generic "the world pauses, the User doesn't" primitive
     spawnAnchor, tickSecondTimer: 60, // Phase 10 -- see spawnAnchor's own comment above and stepFrame's onCombatTick dispatch below
-    spawnOpts: { hpMult: opts.hpMult, speedMult: opts.speedMult, tint: opts.tint, isElite: opts.isElite, menaceRank: opts.menaceRank },
+    menace, // read-only: ai.js passes it to resolvePatternFrames, nothing writes it
+    spawnOpts: {
+      hpMult: (opts.hpMult || 1) * menace.enemyHpMult, // Bloodthirst folds into the multiplier that already existed
+      speedMult: opts.speedMult, tint: opts.tint, isElite: opts.isElite, menaceRank: opts.menaceRank,
+      armorAll: menace.enemyArmorAll, extraEnemies: menace.extraEnemies
+    },
     outcome: 'fighting', banner: '', bannerTimer: 84, // 1400ms
     log: [], pushLog: push, debug: false
   };

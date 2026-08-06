@@ -70,7 +70,12 @@ function installNativeAbilities(dispatcher, def, enemy) {
 
 function spawnWave(combat, waveDef, waveIndex, opts, rng) {
   const spawned = [];
-  resolveWaveTypes(waveDef, rng).forEach((t, i) => {
+  /* Crowded (GDD §8.3): +N bodies per wave, drawn from the wave's own
+     type list so the composition stays the encounter's, only larger. */
+  const types = resolveWaveTypes(waveDef, rng);
+  const extra = opts.extraEnemies || 0;
+  for (let k = 0; k < extra && types.length; k++) types.push(types[k % types.length]);
+  types.forEach((t, i) => {
     const def = resolveEnemyDef(t);
     const pos = spawnPosition(combat.enemies.length);
     /* A run modifier's tint (opts.tint, data.js's MODIFIERS) wins if
@@ -93,6 +98,10 @@ function spawnWave(combat, waveDef, waveIndex, opts, rng) {
        `def.baseType === 'elite'` (the one existing tag, `angelo`) and
        `opts.isElite`/`opts.menaceRank` are the two ways in until that
        phase wires a real source through. */
+    /* Unyielding (GDD §8.3): a flat armor grant on the same generic
+       per-enemy flag poise.js's isArmoredNow() already reads, so the
+       condition needs no new armor system. A no-op at armorAll 0. */
+    if (opts.armorAll) enemy.armorAlways = true;
     const isElite = opts.isElite || def.baseType === 'elite';
     const affixNames = applyAffixesToEnemy(combat, enemy, rollAffixes(rng, isElite, opts.menaceRank || 0));
     combat.enemies.push(enemy);

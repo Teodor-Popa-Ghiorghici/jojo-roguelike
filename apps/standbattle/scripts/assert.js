@@ -6,10 +6,11 @@
    Prints at most 20 lines on success, only the failing items on
    failure. --verbose prints every individual assertion. */
 
-import { checkTelegraphFairness } from '../fairness_check.js';
+import { checkTelegraphFairness, checkTelegraphFairnessAtMenace } from '../fairness_check.js';
 import { runEncounterChecks } from '../encounter_check.js';
 import { runFragmentChecks } from '../fragment_check.js';
 import { runMapChecks } from '../map_check.js';
+import { runMetaChecks } from '../meta_check.js';
 
 const verbose = process.argv.includes('--verbose');
 
@@ -21,6 +22,27 @@ const groups = [];
     name: 'telegraph fairness floor (>=260ms)', pass,
     items: results.map(r => ({ label: `${r.id} ${r.ms.toFixed(0)}ms`, ok: r.ok }))
   });
+}
+{
+  /* Phase 10 -- the half of spec §5.1 that could not be tested before
+     Track B existed: the floor holds "after all Menace modifiers are
+     applied", at the top of the ladder. */
+  const r = checkTelegraphFairnessAtMenace();
+  groups.push({
+    name: r.label, pass: r.pass,
+    items: r.pass ? [{ label: `worst telegraph ${r.worst.ms.toFixed(0)}ms (${r.worst.id})`, ok: true }]
+      : r.failures.map(f => ({ label: f, ok: false }))
+  });
+}
+{
+  /* The Track A / Track B firewall (spec §7). Source-level, so it fails
+     the build the moment the Archive apply path so much as names the
+     combat number pipeline. */
+  const { pass, results } = await runMetaChecks();
+  const items = Object.entries(results).map(([name, r]) => ({
+    label: name + (r.skipped ? ' (skipped: no filesystem)' : ''), ok: r.pass
+  }));
+  groups.push({ name: 'meta firewall (Archive writes no stat, Menace unlocks nothing)', pass, items });
 }
 {
   const { pass, problems, trials } = runEncounterChecks();

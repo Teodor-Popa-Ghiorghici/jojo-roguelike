@@ -97,8 +97,19 @@ export function resolveOwnedEconomyMods(runState) {
    overwrites), or current+1 if you already own it and have Developmental
    Potential left to spend. Maxed-and-owned or out-of-budget candidates
    are dropped so the offer pool never wastes a slot on a dead pick. */
+/* Phase 10 (GDD §9.1/§19): the offerable pool is the registered pool
+   filtered by the run's unlocked donors -- `runState.donors`, stamped once
+   at run start from meta_archive.js's unlock sets. Track A grows this list
+   over ~45 runs and does nothing else: an unlocked donor adds OPTIONS at
+   equal power, and no unlock anywhere changes a Fragment's numbers. An
+   absent list (an old save, the headless harness) means the whole pool,
+   so nothing that existed before Phase 10 is gated by accident. */
+function donorAllowed(runState, donor) {
+  return !runState.donors || runState.donors.includes(donor);
+}
+
 function buildCandidates(runState) {
-  const frags = FRAGMENT_LIST.map(frag => {
+  const frags = FRAGMENT_LIST.filter(f => donorAllowed(runState, f.donor)).map(frag => {
     const owned = runState.fragmentsBySlot[frag.slot];
     if (owned && owned.id === frag.id) {
       if (owned.level >= 3 || runState.upgradePoints <= 0) return null;
