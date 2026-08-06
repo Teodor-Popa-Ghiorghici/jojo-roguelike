@@ -71,7 +71,14 @@ const ACT1_COMBAT_POOL = [
   { enemy: 'knife_thug' },
   { encounter: 'morioh_alley_scuffle' },
   { encounter: 'morioh_shopping_street' },
-  { encounter: 'kameyu_loading_dock' }
+  { encounter: 'kameyu_loading_dock' },
+  // GDD §15 encounter objectives -- near-free variety over the same combat-node pool.
+  { encounter: 'morioh_alley_ambush' },
+  { encounter: 'kameyu_holdout' },
+  { encounter: 'shopping_street_pinned' },
+  { encounter: 'loading_dock_blaze' },
+  { encounter: 'kameyu_bounty' },
+  { encounter: 'morioh_sudden_death' }
 ];
 /* Act I's 2nd boss (Yuya Fungami/Highway Star) is an Elite-tier fight
    leading up to the true final boss, Killer Queen -- the same "N pre-boss

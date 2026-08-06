@@ -17,6 +17,17 @@
 import {
   BOSS_YUYA_FUNGAMI, BOSS_HOL_HORSE, BOSS_NDOUL, BOSS_FORMAGGIO, BOSS_ILLUSO, BOSS_FUNNY_VALENTINE
 } from './data_bosses.js';
+import { ENEMIES } from './data_enemies.js';
+
+/* GDD §15 Sudden Death: "A single enemy at 1 HP that flees; chase it
+   across the arena for a Fragment." A plain enemy def with `hp: 1` and
+   `flees: true` (encounter.js's spawnWave starts its AI in 'flee' --
+   combat_enemy.js) -- no bespoke chase system, the existing killAll
+   winCondition ends the fight the instant it's caught and hit once. */
+const PANICKED_LOOTER = {
+  ...ENEMIES.knife_thug, id: 'panicked_looter', name: 'PANICKED LOOTER', hp: 1,
+  speedPx: ENEMIES.knife_thug.speedPx * 1.3, flees: true
+};
 
 export const ENCOUNTERS = {
   /* ---- Act I -- Morioh --------------------------------------------- */
@@ -42,6 +53,37 @@ export const ENCOUNTERS = {
   yuya_fungami_elite: {
     id: 'yuya_fungami_elite', label: 'HIGHWAY STAR', winCondition: 'killAll',
     waves: [{ types: [BOSS_YUYA_FUNGAMI] }]
+  },
+
+  /* ---- GDD §15 encounter objectives -- Act I --------------------------- */
+  morioh_alley_ambush: {
+    id: 'morioh_alley_ambush', label: 'CAUGHT IN THE ALLEY', objective: 'ambush', winCondition: 'killAll',
+    waves: [{ types: ['morioh_thug', 'knife_thug', 'morioh_thug'] }]
+  },
+  kameyu_holdout: {
+    id: 'kameyu_holdout', label: 'HOLD THE FLOOR', objective: 'survive', winCondition: 'killAll',
+    surviveSpawn: { everyFrames: 300, budget: 2, pool: ['morioh_thug', 'knife_thug'] }, // every 5s
+    waves: [{ types: ['morioh_thug'] }]
+  },
+  shopping_street_pinned: {
+    id: 'shopping_street_pinned', label: 'PINNED DOWN', objective: 'pinned', winCondition: 'killAll',
+    waves: [{ types: ['knife_thug', 'knife_thug'] }]
+  },
+  loading_dock_blaze: {
+    id: 'loading_dock_blaze', label: 'LOADING DOCK BLAZE', objective: 'hazard', winCondition: 'killAll',
+    arenaHazards: [
+      { delay: 90, repeat: 240, hazard: { radius: 50, tickFrames: 20, dmg: 5, lifeFrames: 180 } },
+      { delay: 210, repeat: 240, hazard: { radius: 44, tickFrames: 20, dmg: 5, lifeFrames: 180 } }
+    ],
+    waves: [{ types: ['morioh_thug', 'knife_thug'] }]
+  },
+  kameyu_bounty: {
+    id: 'kameyu_bounty', label: 'MARKED MAN', objective: 'bounty', winCondition: 'killAll',
+    waves: [{ types: ['brute', 'morioh_thug', 'knife_thug'] }] // bountyIndex defaults to 0 -- the Brute
+  },
+  morioh_sudden_death: {
+    id: 'morioh_sudden_death', label: 'GRAB THE LOOT', winCondition: 'killAll',
+    waves: [{ types: [PANICKED_LOOTER] }]
   },
 
   /* ---- Act II -- Cairo pursuit --------------------------------------- */

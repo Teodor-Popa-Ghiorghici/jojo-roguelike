@@ -266,6 +266,12 @@ export function onCombatWin(state, env) {
     const bonus = rollEliteYenBonus(rewardRng);
     earn(rs, bonus); recordYen(rs.telemetry, bonus, 0);
     enterReward(state, env, true);
+  } else if (state.combat.bountyEarly) {
+    // GDD §15 Bounty: "killing it ends the fight early for bonus Yen" -- the same elite bonus roll, a different trigger.
+    const bonus = rollEliteYenBonus(rewardRng);
+    earn(rs, bonus); recordYen(rs.telemetry, bonus, 0);
+    skipOfferForPity(rs);
+    commitNode(state, env);
   } else if (decideCombatRewardKind(rewardRng, rs) === 'yen') {
     const amount = rollCombatYen(rewardRng);
     earn(rs, amount); recordYen(rs.telemetry, amount, 0);

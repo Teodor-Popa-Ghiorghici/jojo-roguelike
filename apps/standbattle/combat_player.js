@@ -250,8 +250,11 @@ export function updatePlayer(combat) {
        Close roots the User while Projected, Mid never roots it, Long
        redirects these same axes to the Stand and drives the User by
        retreat AI instead. `player.stand.controlScheme` is the data field
-       (GDD §3.4 deliverable 4: a table lookup, never a branch here). */
-    const scheme = CONTROL_SCHEMES[player.stand.controlScheme] || CONTROL_SCHEMES.close;
+       (GDD §3.4 deliverable 4: a table lookup, never a branch here).
+       GDD §15 Pinned: `combat.forceControlScheme` (encounter_objectives.js)
+       overrides it for a window regardless of the equipped Stand's own
+       class -- absent for every other fight. */
+    const scheme = CONTROL_SCHEMES[combat.forceControlScheme || player.stand.controlScheme] || CONTROL_SCHEMES.close;
     scheme.stepUser(combat, keys);
     return;
   }
