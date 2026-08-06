@@ -94,8 +94,12 @@ export function settleRun(meta, runState, { outcome, killer }) {
   const missionResult = evaluateMissions(meta.missions, snapshot);
   fate += grantFate(meta.fate, missionResult.fate);
 
+  // GDD §21 Ripple Assist "blocks nothing except Menace rank records": an
+  // assisted clear still pays Fate/Archive/Bonds/Missions above, it just
+  // never overwrites meta.menace.best.
+  const assistActive = !!(runState.assist && (runState.assist.clash || runState.assist.step || runState.assist.damage));
   let menaceResult = { improved: false, titles: [] };
-  if (outcome === 'win' && menaceRank > 0) {
+  if (outcome === 'win' && menaceRank > 0 && !assistActive) {
     const prev = (meta.menace.best && meta.menace.best[standId]) || 0;
     menaceResult = recordMenaceClear(meta.menace, standId, menaceRank);
     if (menaceResult.improved) {

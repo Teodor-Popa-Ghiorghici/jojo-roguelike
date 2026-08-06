@@ -4,9 +4,11 @@
 
 const PARTICLE_CAP = 140;
 
-export function createJuice(shakeEnabled) {
+export function createJuice(shakeEnabled, reduceParticles) {
   return {
     shakeEnabled: shakeEnabled !== false,
+    reduceParticles: !!reduceParticles,
+    setReduceParticles(on) { this.reduceParticles = on; },
     hitstopMs: 0,
     shakeDirX: 0, shakeDirY: 0, shakeMag: 0, shakeTime: 0, shakeElapsed: 0,
     shakeX: 0, shakeY: 0,
@@ -32,7 +34,8 @@ export function createJuice(shakeEnabled) {
       const dx = dirX == null ? 0 : dirX;
       const dy = dirY == null ? -1 : dirY;
       const base = Math.atan2(dy, dx);
-      for (let i = 0; i < count && this.particles.length < PARTICLE_CAP; i++) {
+      const n = this.reduceParticles ? Math.max(1, Math.ceil(count / 3)) : count;
+      for (let i = 0; i < n && this.particles.length < PARTICLE_CAP; i++) {
         const ang = base + (Math.random() - 0.5) * 1.6;
         const spd = speed * (0.5 + Math.random() * 0.8);
         this.particles.push({

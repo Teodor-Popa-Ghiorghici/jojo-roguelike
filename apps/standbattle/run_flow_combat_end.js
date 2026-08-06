@@ -12,6 +12,7 @@ import { recordEncounter, recordYen, appendRunSummary } from './telemetry.js';
 import { skipOfferForPity } from './fragment_offers.js';
 import { settleRun } from './run_end.js';
 import { commitNode, enterReward } from './run_flow.js';
+import { recordChallengeResult } from './daily_seed.js';
 
 /* GDD §9.5: a win and a loss now leave the run by the SAME door. Both pay
    Fate, Archive entries, Bond progress and Mission progress, and both land
@@ -23,6 +24,13 @@ export function finishRun(state, env, outcome, killer) {
   state.summary = settleRun(env.meta, rs, { outcome, killer });
   env.saveStore.saveMeta(env.meta);
   appendRunSummary(env.ctx, { seed: rs.seed, stand: rs.standId, actReached: rs.act, killer, collector: rs.telemetry });
+  // GDD §21 deliverable 2: a daily/weekly seed is identified by its own
+  // seed string (dailySeedId/weeklySeedId), so recording its leaderboard
+  // entry needs no new run-state field -- just a prefix check at the one
+  // door every run already leaves through.
+  if (typeof rs.seed === 'string' && (rs.seed.startsWith('daily-') || rs.seed.startsWith('weekly-'))) {
+    recordChallengeResult(env.ctx, rs.seed, { outcome, act: rs.act, hp: rs.hp, standId: rs.standId, ts: Date.now() });
+  }
   env.saveStore.clearRun();
   state.scene = 'continued';
 }

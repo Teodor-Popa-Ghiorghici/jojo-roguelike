@@ -61,7 +61,12 @@ function freshMetaProgress() {
 }
 
 function defaultMeta() {
-  return { shakeEnabled: true, cleared: false, keymap: null, ...freshMetaProgress() };
+  // GDD §21 accessibility settings, persistent across runs like shakeEnabled/keymap already were.
+  return {
+    shakeEnabled: true, flashEnabled: true, reduceParticles: false, projectToggleMode: false,
+    assist: { clash: false, step: false, damage: false },
+    cleared: false, keymap: null, ...freshMetaProgress()
+  };
 }
 
 /* Belt-and-braces for a blob written by a build between migrations: fills

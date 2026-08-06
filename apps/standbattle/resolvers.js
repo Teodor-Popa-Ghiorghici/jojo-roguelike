@@ -279,3 +279,17 @@ export function resolveFeedbackRate(entity, stats, bus) {
   if (bus) pct = bus.runQuery('getFeedbackRate', pct, { entity });
   return pct;
 }
+
+/* Ripple Assist (GDD §21, Phase 12): Step i-frames x1.3 and Clash window
+   x1.5, each its own independent dial on `player.assist` -- read here so
+   defense.js's timers stay the single derived-number choke point rather
+   than doing the multiply inline at the call site (invariant 5). Incoming
+   damage x0.7 is a third, separate dial applied via the ordinary getDamage
+   query in combat.js (same seam menace's enemyDamageMult already uses). */
+export function resolveStepInvulnFrames(base, assist) {
+  return assist && assist.step ? Math.round(base * 1.3) : base;
+}
+export function resolveClashWindow(activeFrom, activeTo, assist) {
+  if (!assist || !assist.clash) return { from: activeFrom, to: activeTo };
+  return { from: activeFrom, to: activeFrom + Math.round((activeTo - activeFrom) * 1.5) };
+}

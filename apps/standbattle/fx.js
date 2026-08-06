@@ -18,10 +18,21 @@ const BARKS = ['ORA', 'ORA ORA', 'ORA ORA ORA'];
 
 const ease = t => 1 - Math.pow(1 - Math.min(1, t), 3);
 
-export function createFx() {
+/* `opts.flashEnabled` (default true) and `opts.reduceParticles` (GDD §21
+   accessibility, Phase 12): the full-screen white/colour 'flash' type is a
+   photosensitivity concern distinct from shake, gated at this single spawn
+   choke point rather than at each of fx_wire.js's five call sites.
+   reduceParticles thins any burst-shaped spawn (a `count` field) instead of
+   cutting effects outright, so hits/parries/kills still read, just lighter. */
+export function createFx(opts) {
+  const o2 = opts || {};
   const list = [];
   const api = {
     list,
+    flashEnabled: o2.flashEnabled !== false,
+    reduceParticles: !!o2.reduceParticles,
+    setFlashEnabled(on) { this.flashEnabled = on; },
+    setReduceParticles(on) { this.reduceParticles = on; },
     /* `solo` effects are exclusive: spawning one drops any other of the
        same kind still on screen. Without it a fast combo stacks four
        screen flashes and three ray bursts on top of each other and the
@@ -29,10 +40,15 @@ export function createFx() {
        the big responses are supposed to stay rare enough to mean
        something. */
     spawn(type, o) {
+      if (type === 'flash' && !api.flashEnabled) return;
+      // fx_wire.js spawns sparks/auras one-by-one in a loop rather than via a
+      // `count` field -- thin those the same way reduceParticles thins bursts.
+      if (api.reduceParticles && (type === 'spark' || type === 'aura') && Math.random() < 0.5) return;
       if (o && o.solo) {
         for (let i = list.length - 1; i >= 0; i--) if (list[i].solo === o.solo) list.splice(i, 1);
       }
-      if (list.length > 70) list.shift();
+      if (api.reduceParticles && o && o.count) o = Object.assign({}, o, { count: Math.max(1, Math.ceil(o.count / 3)) });
+      if (list.length > (api.reduceParticles ? 30 : 70)) list.shift();
       list.push(Object.assign({ type, t: 0, life: 0.4, x: 0, y: 0, dir: 1 }, o));
     },
     update(dt) {

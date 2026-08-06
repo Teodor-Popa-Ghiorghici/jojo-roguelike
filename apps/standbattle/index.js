@@ -30,6 +30,8 @@ import {
 } from './hub_flow.js';
 import { createRng } from './rng.js';
 import { createInputSystem } from './input.js';
+import { mountAccessibilityBar } from './settings_panel.js';
+import { challengeLoadout, dailySeedId, weeklySeedId } from './daily_seed.js';
 
 const W = 480, H = 270;
 
@@ -55,9 +57,12 @@ export default {
     state.hub = createHubState(meta);
     let shakeEnabled = meta.shakeEnabled !== false;
     const cleared = !!meta.cleared;
-    const input = createInputSystem(meta.keymap);
+    const input = createInputSystem(meta.keymap, !!meta.projectToggleMode);
     let debugEnabled = false;
-    const env = { ctx, saveStore, meta, tsec: 0, shakeEnabled, debugEnabled };
+    const env = {
+      ctx, saveStore, meta, tsec: 0, shakeEnabled, debugEnabled,
+      flashEnabled: meta.flashEnabled !== false, reduceParticles: !!meta.reduceParticles
+    };
 
     if (savedRun && savedRun.graph && savedRun.graph.nodes[savedRun.nodeId]) {
       /* Resuming mid-run loses at most the node in progress -- combat
@@ -134,8 +139,8 @@ export default {
     /* GDD §20's under-8-seconds rule lands here: `launch()` is reachable
        in one click from hub spawn and does everything a run needs -- no
        confirmation step, no station that must be visited first. */
-    function newRun(loadout) {
-      const seed = Date.now() + '-' + Math.floor(Math.random() * 1e9);
+    function newRun(loadout, seedOverride) {
+      const seed = seedOverride || (Date.now() + '-' + Math.floor(Math.random() * 1e9));
       state.runRng = createRng(seed);
       state.runState = createFreshRunState(seed, state.runRng, loadout.standId, loadout);
       state.trainingCombat = false;
@@ -143,6 +148,22 @@ export default {
       persistRun(state, env);
     }
     function launch() { newRun(launchLoadout(meta, state.hub.unlocks)); }
+    /* GDD §21 deliverable 2: same one-click launch, a fixed seed instead
+       of a random one -- challengeLoadout(seedId) derives Stand/Aspect/
+       Menace straight from the seed string, so every player who launches
+       today's (or this week's) challenge gets the identical run. */
+    function launchChallenge(seedId) { newRun(challengeLoadout(seedId), seedId); }
+
+    /* GDD §21: flash/particles/Ripple Assist/Project mode toggles, key
+       rebinding, and the Daily/Weekly challenge launchers + leaderboard,
+       all split into settings_panel.js so this file stays the thin mount
+       shell. */
+    mountAccessibilityBar(bar, pane, {
+      meta, saveStore, env, input, state, ctx,
+      onLaunchDaily: () => { if (isHubScene(state.scene)) { launchChallenge(dailySeedId()); if (window.Snd) window.Snd.select(); } },
+      onLaunchWeekly: () => { if (isHubScene(state.scene)) { launchChallenge(weeklySeedId()); if (window.Snd) window.Snd.select(); } }
+    });
+
     function enterTraining() {
       state.combat = startTrainingFight(state.hub.training);
       state.combat.debug = env.debugEnabled;

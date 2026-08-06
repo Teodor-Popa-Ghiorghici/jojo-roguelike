@@ -49,9 +49,10 @@ export function attachComponentStubs(entity) {
    this factory still doesn't need to know they exist. maxPersistence
    starts at the Stand's base 100 and is resolved through
    getMaxPersistence once, right after this call, by combat.js. */
-export function createPlayerFighter(stand, x, z) {
+export function createPlayerFighter(stand, x, z, assist) {
   const entity = {
     id: 'player', kind: 'player', stand, x, z: z == null ? Z_REST : z, facing: 1,
+    assist: assist || null, // GDD §21 Ripple Assist -- {clash, step, damage} booleans, read by defense.js/combat.js
     hp: 100, maxHp: 100,
     persistence: 30, maxPersistence: 100,
     momentum: 0, framesSinceHitLanded: 0, // GDD §3.8 -- the mechanical resource comboCount used to be

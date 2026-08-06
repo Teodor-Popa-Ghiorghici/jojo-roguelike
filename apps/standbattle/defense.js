@@ -19,6 +19,7 @@
 
 import { enterStagger } from './ai.js';
 import { spendPersistence, gainPersistence, gainMomentum } from './resources.js';
+import { resolveStepInvulnFrames, resolveClashWindow } from './resolvers.js';
 
 export const STEP_PRE_FRAMES = 3;
 export const STEP_INVULN_FRAMES = 10;
@@ -44,7 +45,11 @@ export function startStep(player, enemy) {
   if (player.dodgeCharges <= 0) return false;
   player.dodgeCharges--;
   player.state = 'dodge';
-  player.stateTimer = STEP_FRAMES;
+  // Ripple Assist's Step dial (GDD §21): i-frames x1.3, resolved once per
+  // Step rather than baked into the STEP_FRAMES constant every player shares.
+  const invulnFrames = resolveStepInvulnFrames(STEP_INVULN_FRAMES, player.assist);
+  player.stepInvulnFrames = invulnFrames;
+  player.stateTimer = STEP_PRE_FRAMES + invulnFrames + STEP_RECOVER_FRAMES;
   player.invulnerable = false; // the 3f pre-window is NOT invulnerable
   player.dodgeDir = enemy.x > player.x ? -1 : 1;
   return true;
@@ -66,8 +71,10 @@ export function tickStepCharges(player) {
 /* Returns the x offset to apply this frame (0 outside the invulnerable
    window) and updates `player.invulnerable`. Caller owns arena clamping. */
 export function stepDodgeMovement(player, dashSpeed) {
-  const elapsed = STEP_FRAMES - player.stateTimer; // frames processed so far, 1-indexed
-  const inInvuln = elapsed > STEP_PRE_FRAMES && elapsed <= STEP_PRE_FRAMES + STEP_INVULN_FRAMES;
+  const invulnFrames = player.stepInvulnFrames != null ? player.stepInvulnFrames : STEP_INVULN_FRAMES;
+  const total = STEP_PRE_FRAMES + invulnFrames + STEP_RECOVER_FRAMES;
+  const elapsed = total - player.stateTimer; // frames processed so far, 1-indexed
+  const inInvuln = elapsed > STEP_PRE_FRAMES && elapsed <= STEP_PRE_FRAMES + invulnFrames;
   player.invulnerable = inInvuln;
   return inInvuln ? player.dodgeDir * dashSpeed : 0;
 }
@@ -99,16 +106,20 @@ export function guardBreakStagger(player) {
 export function startClash(player) {
   player.state = 'parry';
   player.clashPhase = 'window';
-  player.stateTimer = CLASH_TOTAL_FRAMES;
+  // Ripple Assist's Clash dial (GDD §21): the active window x1.5.
+  const window = resolveClashWindow(CLASH_ACTIVE_FROM, CLASH_ACTIVE_TO, player.assist);
+  player.clashWindow = window;
+  player.stateTimer = window.to;
   player.parryWindow = false;
 }
 
 /* One frame of the active-window sub-phase; call only while
    `player.clashPhase === 'window'`. */
 export function stepClashWindow(player) {
-  const elapsed = CLASH_TOTAL_FRAMES - player.stateTimer;
+  const window = player.clashWindow || { from: CLASH_ACTIVE_FROM, to: CLASH_ACTIVE_TO };
+  const elapsed = window.to - player.stateTimer;
   player.clashElapsed = elapsed;
-  player.parryWindow = elapsed >= CLASH_ACTIVE_FROM;
+  player.parryWindow = elapsed >= window.from;
 }
 
 export function isPerfectClash(player) {

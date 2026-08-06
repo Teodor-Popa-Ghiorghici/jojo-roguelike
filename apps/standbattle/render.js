@@ -166,7 +166,7 @@ function drawFighter(g, f, pose, camX, tsec, isPlayer, phaseIndex, rim) {
 
 export function drawCombat(g, W, H, combat, tsec, dtMs, sceneId) {
   if (!combat._fx) {
-    combat._fx = createFx();
+    combat._fx = createFx({ flashEnabled: combat.flashEnabled, reduceParticles: combat.reduceParticles });
     wireFx(combat, combat._fx, GROUND_Y);
   }
   const fx = combat._fx;
