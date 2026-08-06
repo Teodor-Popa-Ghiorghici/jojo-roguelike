@@ -17,6 +17,9 @@ import { spawnHazard } from './hazards.js';
 import { applyDamage } from './fighter.js';
 import { AFFIX_EFFECT_LIB } from './affix_effect_lib.js';
 import { ITEM_EFFECT_LIB, ITEM_QUERY_LIB } from './item_effect_lib.js';
+import {
+  ASPECT_EFFECT_LIB, ASPECT_QUERY_LIB, ASPECT_VERB_CATEGORIES, ASPECT_QUERY_VERB_CATEGORIES
+} from './aspect_effect_lib.js';
 import { ARENA_MIN, ARENA_MAX, ARENA_Z_MIN, ARENA_Z_MAX } from './constants.js';
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -111,6 +114,10 @@ export const EFFECT_LIB = {
      mechanic -- GDD §6.1's Red Hot Chili Pepper example is the model). */
   markNearestBroken(ctx, data) {
     if (!ctx.combat) return;
+    // Phase 10: the same optional slot gate grantResource already carries,
+    // so "this slot Breaks instead of hitting" needs no second verb.
+    // Absent `slot` keeps the Phase 7 behaviour exactly.
+    if (data.slot != null && ctx.slot !== data.slot) return;
     const player = ctx.entity || ctx.combat.player;
     const alive = ctx.combat.enemies.filter(e => e.hp > 0).sort((a, b) =>
       Math.hypot(a.x - player.x, a.z - player.z) - Math.hypot(b.x - player.x, b.z - player.z));
@@ -194,7 +201,9 @@ export const EFFECT_LIB = {
      reflectPctDamageToAttacker, cureStatus, returnToAnchor,
      applyStatusToNearby, damageNearby, consumeStatusForBonus, selfDamage)
      -- moved to item_effect_lib.js, same reason/discipline as above. */
-  ...ITEM_EFFECT_LIB
+  ...ITEM_EFFECT_LIB,
+  // Phase 10 Aspect-side verbs -- aspect_effect_lib.js, same split discipline.
+  ...ASPECT_EFFECT_LIB
 };
 
 /* ---- QUERIES (pure value reducers) -------------------------------------- */
@@ -233,7 +242,9 @@ export const QUERY_LIB = {
   /* Phase 10 item-side query (bonusIfDefenderStatus) -- see
      item_effect_lib.js's own header for why it generalizes the verb
      above instead of duplicating it per status. */
-  ...ITEM_QUERY_LIB
+  ...ITEM_QUERY_LIB,
+  // Phase 10 Aspect-side queries -- neither can reach an enemy telegraph.
+  ...ASPECT_QUERY_LIB
 };
 
 /* GDD §6.7: "Every Fragment must do at least one of: apply, amplify,
@@ -273,7 +284,10 @@ export const VERB_CATEGORIES = {
   consumeStatusForBonus: ['consume-status', 'convert-resource'],
   selfDamage: [],
   periodicTimeStop: ['rewrite-slot'],
-  preventLethalOnce: ['rewrite-slot']
+  preventLethalOnce: ['rewrite-slot'],
+  /* Phase 10: every Aspect-side verb is a real apply/consume/convert/
+     rewrite clause -- there is deliberately no pure-arithmetic one. */
+  ...ASPECT_VERB_CATEGORIES
 };
 export const QUERY_VERB_CATEGORIES = {
   multiplyIfPlayerAttacker: [],
@@ -281,5 +295,6 @@ export const QUERY_VERB_CATEGORIES = {
   multiplyFlat: [],
   removeCapForSlot: ['rewrite-slot'],
   bonusIfDefenderVirusStacks: [],
-  bonusIfDefenderStatus: []
+  bonusIfDefenderStatus: [],
+  ...ASPECT_QUERY_VERB_CATEGORIES
 };

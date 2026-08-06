@@ -6,7 +6,7 @@
    broken run save can never take meta down with it. */
 
 const RUN_VERSION = 3;
-const META_VERSION = 1;
+const META_VERSION = 2;
 
 /* Migration table: RUN_MIGRATIONS[v] upgrades data from version v to v+1.
    v1 -> v2 (Phase 7): RUN_BUFFS' bespoke `buffs` array is retired in
@@ -32,10 +32,53 @@ const RUN_MIGRATIONS = {
     return { ...rest, fragmentsBySlot: {}, nodesSinceRare: 0, slotOfferCounts: {}, upgradePoints: null };
   }
 };
-const META_MIGRATIONS = {};
+/* v1 -> v2 (Phase 10): meta grows from three display settings into the
+   real meta-progression blob. Unlike the run migrations there is nothing
+   to reconcile -- every new field is additive and starts empty, so a v1
+   save keeps its shake/cleared/keymap and simply begins the Archive at
+   zero Fate. Deliberately spelled out rather than defaulted lazily at each
+   read site, so `meta.fate.fate` is guaranteed to exist everywhere. */
+const META_MIGRATIONS = {
+  1: data => ({ ...data, ...freshMetaProgress() })
+};
+
+/* Phase 10. Track A state (fate/archive/bonds) and Track B state (menace)
+   sit side by side in the blob but are never merged: the two are read by
+   two different modules and, per spec §7, neither can express the other's
+   effect. `missions` and `titles` belong to neither -- they are the
+   payout ledger both tracks feed. */
+function freshMetaProgress() {
+  return {
+    fate: { fate: 0, lifetimeFate: 0 },
+    archive: { purchased: [], seen: {} },
+    menace: { pacts: {}, best: {} },
+    bonds: {},
+    missions: { completed: [] },
+    titles: [],
+    lastRun: null,
+    loadout: {} // { [standId]: { aspectId, keepsakeId } }
+  };
+}
 
 function defaultMeta() {
-  return { shakeEnabled: true, cleared: false, keymap: null };
+  return { shakeEnabled: true, cleared: false, keymap: null, ...freshMetaProgress() };
+}
+
+/* Belt-and-braces for a blob written by a build between migrations: fills
+   any missing top-level progress field without touching one that exists.
+   index.js calls this right after loadMeta(). */
+export function ensureMetaProgress(meta) {
+  const fresh = freshMetaProgress();
+  for (const key of Object.keys(fresh)) {
+    if (meta[key] == null) meta[key] = fresh[key];
+  }
+  if (meta.fate.fate == null) meta.fate.fate = 0;
+  if (!Array.isArray(meta.archive.purchased)) meta.archive.purchased = [];
+  if (!meta.archive.seen) meta.archive.seen = {};
+  if (!meta.menace.pacts) meta.menace.pacts = {};
+  if (!meta.menace.best) meta.menace.best = {};
+  if (!Array.isArray(meta.missions.completed)) meta.missions.completed = [];
+  return meta;
 }
 
 function migrate(entry, migrations, targetVersion, fallback) {

@@ -10,15 +10,24 @@ import { drawRest, restChoices, pickRestChoice } from './rest.js';
 import { drawShop, pickShopAction } from './shop.js';
 import { drawArchiveStub, pickArchiveContinue } from './archive_stub.js';
 import { drawReward, pickRewardChoice } from './rewards.js';
-import { drawTitle, drawComplete } from './scenes.js';
+import { drawTitle } from './scenes.js'; // drawComplete retired: both outcomes now land on scene_continued.js (GDD §9.5)
 import { drawStandSelect, pickStand } from './standselect.js';
 import {
   createFreshRunState, resolveNodeEntry, commitNode, onCombatWin, finishRunLoss,
-  applyRewardChoice, applyEventChoice, applyRestChoice, applyShopAction, persistRun
+  persistRun
 } from './run_flow.js';
+import {
+  applyRewardChoice, applyEventChoice, applyRestChoice, applyShopAction
+} from './run_choices.js';
 import { sfxVictory, sfxDefeat } from './audio.js';
 import { musicStart, musicSetIntensity, musicStop } from './music.js';
-import { createSaveStore } from './save.js';
+import { createSaveStore, ensureMetaProgress } from './save.js';
+/* Phase 10: the hub and its six stations, the Training Room and the
+   TO BE CONTINUED screen all dispatch through hub_flow.js, so this file's
+   two if/else chains gain one branch each rather than eight. */
+import {
+  createHubState, isHubScene, drawHubScene, hubClick, hubKey, launchLoadout, startTrainingFight
+} from './hub_flow.js';
 import { createRng } from './rng.js';
 import { createInputSystem } from './input.js';
 
@@ -34,14 +43,16 @@ export default {
 
   async mount(root, ctx) {
     const saveStore = createSaveStore(ctx);
-    const meta = await saveStore.loadMeta();
+    const meta = ensureMetaProgress(await saveStore.loadMeta());
     const savedRun = await saveStore.loadRun();
 
     const state = {
       scene: 'title', runState: null, runRng: null, combat: null,
       currentEvent: null, currentOffer: null, shop: null,
-      enteringNodeId: null, combatStartTsec: 0
+      enteringNodeId: null, combatStartTsec: 0,
+      hub: null, summary: null, trainingCombat: false
     };
+    state.hub = createHubState(meta);
     let shakeEnabled = meta.shakeEnabled !== false;
     const cleared = !!meta.cleared;
     const input = createInputSystem(meta.keymap);
@@ -120,12 +131,24 @@ export default {
       if (window.Snd) window.Snd.click();
     });
 
-    function newRun(standId) {
+    /* GDD §20's under-8-seconds rule lands here: `launch()` is reachable
+       in one click from hub spawn and does everything a run needs -- no
+       confirmation step, no station that must be visited first. */
+    function newRun(loadout) {
       const seed = Date.now() + '-' + Math.floor(Math.random() * 1e9);
       state.runRng = createRng(seed);
-      state.runState = createFreshRunState(seed, state.runRng, standId);
+      state.runState = createFreshRunState(seed, state.runRng, loadout.standId, loadout);
+      state.trainingCombat = false;
       state.scene = 'map';
       persistRun(state, env);
+    }
+    function launch() { newRun(launchLoadout(meta, state.hub.unlocks)); }
+    function enterTraining() {
+      state.combat = startTrainingFight(state.hub.training);
+      state.combat.debug = env.debugEnabled;
+      state.trainingCombat = true;
+      state.combatStartTsec = tsec;
+      state.scene = 'combat';
     }
 
     function canvasXY(ev) {
@@ -135,10 +158,16 @@ export default {
 
     function handleClick(ev) {
       const { mx, my } = canvasXY(ev);
-      if (state.scene === 'title') { state.scene = 'standselect'; if (window.Snd) window.Snd.open(); }
+      if (state.scene === 'title') { state.scene = 'hub'; if (window.Snd) window.Snd.open(); }
+      else if (isHubScene(state.scene)) {
+        const r = hubClick(state, env, mx, my, W, H);
+        if (r === 'launch') { launch(); if (window.Snd) window.Snd.select(); }
+        else if (r === 'train') { enterTraining(); if (window.Snd) window.Snd.select(); }
+        else if (window.Snd) window.Snd.click();
+      }
       else if (state.scene === 'standselect') {
         const standId = pickStand(mx, my, W, H);
-        if (standId) { newRun(standId); if (window.Snd) window.Snd.select(); }
+        if (standId) { newRun({ standId, donors: [...state.hub.unlocks.donors] }); if (window.Snd) window.Snd.select(); }
       }
       else if (state.scene === 'map') {
         const id = pickNode(mx, my, state.runState.graph, state.runState, W);
@@ -156,17 +185,24 @@ export default {
       } else if (state.scene === 'archive') {
         if (pickArchiveContinue(mx, my, W, H)) { if (window.Snd) window.Snd.ok(); commitNode(state, env); }
       } else if (state.scene === 'combat' && state.combat.outcome !== 'fighting') {
-        if (state.combat.outcome === 'win') onCombatWin(state, env);
+        /* A training fight settles nothing: it pays no Fate, completes no
+           Mission and advances no Bond, because it cost nothing. */
+        if (state.trainingCombat) { state.combat = null; state.trainingCombat = false; state.scene = 'training'; }
+        else if (state.combat.outcome === 'win') onCombatWin(state, env);
         else finishRunLoss(state, env);
       } else if (state.scene === 'reward') {
         const idx = pickRewardChoice(mx, my, state.currentOffer, W);
         if (idx >= 0) { if (window.Snd) window.Snd.select(); applyRewardChoice(state, idx, env); }
-      } else if (state.scene === 'complete') {
-        state.scene = 'title';
       }
     }
 
     function onKey(ev, down) {
+      /* The one-key skip (GDD §20) is checked before the input map, so it
+         works on every hub screen regardless of the player's keybinds. */
+      if (down && isHubScene(state.scene)) {
+        const r = hubKey(state, env, ev.code);
+        if (r) { ev.preventDefault(); ev.stopPropagation(); if (r === 'train') enterTraining(); return; }
+      }
       const resolved = input.resolveKey(ev.code, down);
       if (!resolved) return;
       ev.preventDefault();
@@ -186,7 +222,8 @@ export default {
       t0 = now;
       tsec += dt / 1000;
       env.tsec = tsec;
-      if (state.scene === 'combat') {
+      if (drawHubScene(g, W, H, state, env, tsec)) { /* hub, its stations, training, TO BE CONTINUED */ }
+      else if (state.scene === 'combat') {
         const c = state.combat;
         c.update(dt);
         if (c.outcome === 'fighting') {
@@ -197,7 +234,7 @@ export default {
           musicSetIntensity(0);
           if (c.outcome === 'win') sfxVictory(); else sfxDefeat();
         }
-        const activeNode = state.runState.graph.nodes[state.enteringNodeId];
+        const activeNode = state.runState && state.runState.graph.nodes[state.enteringNodeId];
         drawCombat(g, W, H, c, tsec, dt, activeNode && activeNode.scene);
       }
       else if (state.scene === 'map') drawMap(g, W, H, state.runState.graph, state.runState, tsec);
@@ -208,7 +245,7 @@ export default {
       else if (state.scene === 'archive') drawArchiveStub(g, W, H, tsec);
       else if (state.scene === 'title') drawTitle(g, W, H, tsec, cleared);
       else if (state.scene === 'standselect') drawStandSelect(g, W, H, tsec);
-      else if (state.scene === 'complete') drawComplete(g, W, H, state.runState, tsec);
+
       info.textContent = state.scene === 'combat'
         ? 'A/D MOVE  W/S DEPTH  J/K/L ATTACK  SPACE STEP  SHIFT CLASH  G GUARD  U SPECIAL  I RUSH  F PROJECT'
         : 'CLICK TO CONTINUE';

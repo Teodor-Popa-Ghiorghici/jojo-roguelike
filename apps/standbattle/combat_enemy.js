@@ -87,7 +87,7 @@ export function stepEnemyMovementAndAI(combat, enemy, aiRng) {
   stepSummon(combat, enemy, aiRng); // Phase 9b Puppeteer/Caller -- a no-op for every def without a `summon` field
   const wasWindup = enemy.ai.state === 'windup';
   // GDD §4.2 Hound (#7): "ignores attack tokens" -- always eligible to commit, never gated by the crowd's pool
-  const ev = stepEnemyAI(enemy.ai, dist, aiRng, enemy.hasToken || enemy.def.ignoresToken);
+  const ev = stepEnemyAI(enemy.ai, dist, aiRng, enemy.hasToken || enemy.def.ignoresToken, combat.menace);
   if (!wasWindup && enemy.ai.state === 'windup') dispatcher.fire('onTelegraphStart', { pattern: enemy.ai.pattern });
   if (ev && ev.type === 'spawnMelee') {
     /* GDD §3.1/deliverable 5: the User and the Stand are separately

@@ -90,9 +90,21 @@ export function resolveMoveFrames(entity, moveId, stats, bus) {
    aren't Stands in this data model, tech §2.4 is explicit that only
    player moves must) -- but they still resolve through one function so a
    later Menace modifier (tech §2.9: "recovery frames shrink, telegraphs
-   never do") has exactly one place to apply. Pass-through today. */
-export function resolvePatternFrames(enemy, patternId) {
-  return PATTERNS[patternId];
+   never do") has exactly one place to apply.
+
+   Phase 10 is that later. This function was a pass-through with no callers
+   until now (a finding: ai.js read PATTERNS directly, so the choke point
+   the comment above promised did not actually sit on the path); ai.js now
+   resolves every pattern through it. `menace` is meta_menace.js's frozen
+   profile, and note precisely what is read from it: `enemyRecoveryMult`,
+   applied to `recoverFrames`. `windupFrames` is copied through untouched
+   and the profile has no key that could reach it, which is what makes
+   spec §5.1's ">= 260ms after all Menace modifiers" a structural property
+   rather than a number that happens to stay large. */
+export function resolvePatternFrames(enemy, patternId, menace) {
+  const def = PATTERNS[patternId];
+  if (!def || !menace || menace.enemyRecoveryMult === 1) return def;
+  return { ...def, recoverFrames: Math.max(1, Math.round(def.recoverFrames * menace.enemyRecoveryMult)) };
 }
 
 /* Precision -> crit chance (spec §2.1: "Precision — crit chance / status-

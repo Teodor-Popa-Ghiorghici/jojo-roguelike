@@ -31,6 +31,11 @@ function isArmoredNow(ai, enemy) {
   if (enemy && enemy.armorStripped) return false;
   // Phase 9b Ironclad: armored through every pattern's windup, not just the ones authored with `armor: true`.
   if (enemy && enemy.affixData && enemy.affixData.ironclad) return true;
+  /* Phase 10 Unyielding (GDD §8.3, "enemies gain armor on all attacks"):
+     the same shape as Ironclad above, sourced from Track B's profile
+     instead of an affix roll -- still only during a windup that is itself
+     still fully telegraphed, so "firm, never unfair" is unchanged. */
+  if (enemy && enemy.armorAlways) return ai.state === 'windup';
   return ai.state === 'windup' && ai.pattern && ai.pattern.armor;
 }
 

@@ -25,15 +25,30 @@ import { ECHOES_ACT3_FRAGMENTS } from './content/fragments/echoes_act3.js';
 import { RED_HOT_CHILI_PEPPER_FRAGMENTS } from './content/fragments/red_hot_chili_pepper.js';
 import { HERMIT_PURPLE_FRAGMENTS } from './content/fragments/hermit_purple.js';
 
-export const DONORS = [
+/* Phase 10 (GDD §9.1/§19): six more donors, 42 more Fragments, every one
+   of them behind an Archive node. They are registered and validated
+   unconditionally -- being in the POOL and being OFFERABLE are different
+   things, exactly as Phase 7 established for owned-vs-registered -- and
+   fragment_offers.js filters candidates by the run's unlocked donor set.
+   That is what makes the reward pool grow over the first twenty hours
+   without any of it making a number bigger: 8 donors and 52 Fragments at
+   run 1, 14 and 94 once the tree is bought out, with the last donor
+   landing in tier 3 around run 45. */
+import { DONORS_META_A, FRAGMENTS_META_A } from './content/donors_meta_a.js';
+import { DONORS_META_B, FRAGMENTS_META_B } from './content/donors_meta_b.js';
+
+export const BASE_DONORS = [
   'purple_haze', 'the_world', 'sticky_fingers',
   'crazy_diamond', 'gold_experience', 'echoes_act3', 'red_hot_chili_pepper', 'hermit_purple'
 ];
 
+export const DONORS = [...BASE_DONORS, ...DONORS_META_A, ...DONORS_META_B];
+
 export const FRAGMENT_LIST = [
   ...PURPLE_HAZE_FRAGMENTS, ...THE_WORLD_FRAGMENTS, ...STICKY_FINGERS_FRAGMENTS,
   ...CRAZY_DIAMOND_FRAGMENTS, ...GOLD_EXPERIENCE_FRAGMENTS, ...ECHOES_ACT3_FRAGMENTS,
-  ...RED_HOT_CHILI_PEPPER_FRAGMENTS, ...HERMIT_PURPLE_FRAGMENTS
+  ...RED_HOT_CHILI_PEPPER_FRAGMENTS, ...HERMIT_PURPLE_FRAGMENTS,
+  ...FRAGMENTS_META_A, ...FRAGMENTS_META_B
 ];
 
 export const FRAGMENTS = Object.fromEntries(FRAGMENT_LIST.map(f => [f.id, f]));

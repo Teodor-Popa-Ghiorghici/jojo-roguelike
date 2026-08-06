@@ -27,6 +27,16 @@
    telegraph, so it is firm, never unfair (poise.js checks this before
    forcing a Stagger). `tags` include 'heavy' on patterns that should
    break a held Guard (defense.js). */
+/* Phase 10: the pattern-timeline choke point lives in resolvers.js
+   (invariant 5). This is a cycle -- resolvers.js imports PATTERNS from
+   here -- but both sides export hoisted function declarations, so the
+   bindings are initialised at instantiation and neither module reads the
+   other at module scope. Kept this way deliberately rather than inlining
+   the recovery maths here, which would put a second derived number
+   outside the resolvers.
+*/
+import { resolvePatternFrames } from './resolvers.js';
+
 export const PATTERNS = {
   sweep: {
     id: 'sweep', label: 'SWEEP', windupFrames: 20, activeFrames: 10, recoverFrames: 18, // 340/160/300ms
@@ -213,7 +223,7 @@ export function enterStagger(ai, frames, mult) {
    behaves as `true` -- a solo fight (boss/elite) has exactly one candidate
    against 2 token slots and is always granted one, so this gate is a no-op
    for every encounter that existed before Phase 5. */
-export function stepEnemyAI(ai, dist, rng, canCommit) {
+export function stepEnemyAI(ai, dist, rng, canCommit, menace) {
   ai.timer -= 1;
   if (ai.state === 'staggered') {
     if (ai.timer <= 0) { ai.state = 'approach'; ai.staggerMult = 1; }
@@ -222,7 +232,13 @@ export function stepEnemyAI(ai, dist, rng, canCommit) {
   if (ai.state === 'approach') {
     if (canCommit === false) return null;
     if (dist <= ai.approachRange || rng.random() < 0.002) {
-      ai.pattern = PATTERNS[pickPattern(ai.patternIds, dist, rng)];
+      /* Phase 10: the pattern is resolved through resolvers.js's one choke
+         point (invariant 5) instead of read straight out of PATTERNS, so
+         Menace's recovery condition has somewhere to apply. The resolved
+         copy is stamped onto `ai.pattern` once, at commit -- every read
+         below (windup/active/recover) then sees the same timeline for the
+         whole attack, and `windupFrames` is the authored value untouched. */
+      ai.pattern = resolvePatternFrames(ai, pickPattern(ai.patternIds, dist, rng), menace);
       ai.state = 'windup';
       ai.timer = ai.pattern.windupFrames;
     }
