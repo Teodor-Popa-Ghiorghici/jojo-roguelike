@@ -21,6 +21,12 @@ import { PRIORITY } from './hooks.js';
 /* Fragment slot vocabulary — GDD §6.1. */
 export const SLOTS = ['light', 'medium', 'heavy', 'special_1', 'special_2', 'rush', 'step', 'clash', 'aura'];
 
+/* Disc slot vocabulary — GDD §6.4: "swap a Special or your Rush for a
+   different Stand's". A strict subset of SLOTS; a Disc on 'light' or
+   'aura' would just be an unlabelled second Fragment, not the "weapon
+   swap" axis the GDD describes. */
+export const DISC_SLOTS = ['special_1', 'special_2', 'rush'];
+
 /* Item tag vocabulary — GDD §6.6. Distinct from the move/hitbox tag set in
    moves.js/ai.js (`light`/`heavy`/`melee`/`ranged`/...), which describes
    what an attack *is*; this vocabulary describes what a Fragment/Relic
@@ -32,11 +38,17 @@ export function createContentRegistry() {
     fragments: [],
     relics: [],
     affixes: [],
+    discs: [],
+    requiems: [],
+    duos: [],
     donors: new Set(),
     registerDonor(id) { this.donors.add(id); },
     registerFragment(def) { this.fragments.push(def); },
     registerRelic(def) { this.relics.push(def); },
-    registerAffix(def) { this.affixes.push(def); }
+    registerAffix(def) { this.affixes.push(def); },
+    registerDisc(def) { this.discs.push(def); },
+    registerRequiem(def) { this.requiems.push(def); },
+    registerDuo(def) { this.duos.push(def); }
   };
 }
 
@@ -88,6 +100,25 @@ function validateHooks(kind, def, dispatcher, errors) {
   });
 }
 
+/* requires[] validation shared by Duo Fragments (GDD §6.1: "two specific
+   donors") and cross-donor Requiems (GDD §6.2 table: "one per donor + 4
+   cross-donor") -- both name donors, neither names a slot (tech §3's own
+   Duo schema omits slot: owning ANY Fragment from that donor qualifies). */
+function validateRequires(kind, def, registry, errors) {
+  if (!Array.isArray(def.requires) || def.requires.length === 0) {
+    errors.push(`${kind} "${def.id}": missing "requires" (array of {donor})`);
+    return;
+  }
+  if (kind === 'duo' && def.requires.length !== 2) {
+    errors.push(`${kind} "${def.id}": Duo Fragments require exactly 2 donors, got ${def.requires.length}`);
+  }
+  def.requires.forEach(r => {
+    if (!r || !r.donor || !registry.donors.has(r.donor)) {
+      errors.push(`${kind} "${def.id}": unknown donor "${r && r.donor}" in "requires"`);
+    }
+  });
+}
+
 function validateEntry(kind, def, registry, dispatcher, errors) {
   if (!def || !def.id) { errors.push(`${kind}: entry is missing an "id"`); return; }
   validateHooks(kind, def, dispatcher, errors);
@@ -103,14 +134,19 @@ function validateEntry(kind, def, registry, dispatcher, errors) {
         'apply/amplify/consume/convert a status, convert a resource, rewrite a slot\'s behaviour, or change the economy');
     }
   }
+  /* Discs (GDD §6.4) are the "weapon swap" axis, not the boon-synergy
+     chase -- real hooks/tags are required, GDD §6.7's synergy union is
+     deliberately NOT enforced on them. */
+  if (kind === 'disc' && !DISC_SLOTS.includes(def.slot)) {
+    errors.push(`disc "${def.id}": unknown Disc slot "${def.slot}" (must be one of ${DISC_SLOTS.join(', ')})`);
+  }
+  if (kind === 'duo' || kind === 'requiem') validateRequires(kind, def, registry, errors);
   /* spec §6.3: "every one of those has a downside stated at pickup...
-     never a hidden clause". Originally Relic-only; Phase 7 extends it to
-     Fragments too (tech §3's own Fragment schema carries the same
-     `tradeoff` field, and GDD §6.1's Purple Haze — Aura example is a
-     Fragment with an explicit downside) -- anything tagged 'risk', by
+     never a hidden clause". Originally Relic-only; Phase 7 extended it to
+     Fragments; Phase 10 makes it universal -- anything tagged 'risk', by
      this vocabulary's own definition, is declaring a downside, so it must
      carry a non-null tradeoff string regardless of which pool it's in. */
-  if ((kind === 'relic' || kind === 'fragment' || kind === 'affix') && def.tags && def.tags.includes('risk') && !def.tradeoff) {
+  if (def.tags && def.tags.includes('risk') && !def.tradeoff) {
     errors.push(`${kind} "${def.id}": tagged 'risk' but has no "tradeoff" string`);
   }
 }
@@ -125,6 +161,9 @@ export function validateContent(registry, dispatcher) {
   registry.fragments.forEach(f => validateEntry('fragment', f, registry, dispatcher, errors));
   registry.relics.forEach(r => validateEntry('relic', r, registry, dispatcher, errors));
   registry.affixes.forEach(a => validateEntry('affix', a, registry, dispatcher, errors));
+  registry.discs.forEach(d => validateEntry('disc', d, registry, dispatcher, errors));
+  registry.requiems.forEach(r => validateEntry('requiem', r, registry, dispatcher, errors));
+  registry.duos.forEach(d => validateEntry('duo', d, registry, dispatcher, errors));
 
   /* "...after all Menace modifiers are applied" (GDD §6.8) is deferred:
      Menace ranks (tech §5 Phase 5) don't exist yet, so there is no
@@ -158,11 +197,12 @@ export function assertContentValid(registry, dispatcher) {
 
 /* Validates, then (only if clean) installs every Fragment/Relic effect
    and query into the dispatcher unconditionally, attributed to the
-   content's own id (hooks.js's ctx.source). Relics have no ownership/
-   level concept yet (out of Phase 7's scope), so "registered" and
-   "active" are still the same thing for them -- this is the path they'll
-   keep using. Fragments (Phase 7) go through installFragment instead,
-   since being registered in the pool no longer means being owned. */
+   content's own id (hooks.js's ctx.source). Historical Phase 3 path, kept
+   only for content_check.js's own regression test ("validate the whole
+   registry and install everything, no ownership concept at all"). Real
+   fights never call this: Fragments go through installFragment (owned +
+   levelled, Phase 7), Relics/Discs through installRelic/installDisc
+   (owned, unlevelled, Phase 10) -- see combat.js. */
 export function loadContent(registry, dispatcher) {
   assertContentValid(registry, dispatcher);
   [...registry.fragments, ...registry.relics].forEach(def => {
@@ -221,49 +261,28 @@ export function installFragment(dispatcher, def, level) {
   });
 }
 
-/* Phase 9b finding: Fragments/Relics above install GLOBALLY -- one
-   registration lasts the whole fight, correct because there is exactly one
-   player. Affixes are rolled per spawned ENEMY INSTANCE (affixes.js), so
-   the same effect/query registration needs a filter identifying "is this
-   firing actually about MY enemy" before it may run at all -- the one
-   piece Fragment installation never needed. AFFIX_SCOPE says which ctx
-   field names that enemy for each hook this content type actually uses;
-   `scopeInvert` (Enraged-on-Kill) flips the match to "about anyone ELSE".
-   Every verb an affix names still comes from the same EFFECT_LIB/QUERY_LIB
-   Fragments use (invariant 6) -- this only changes WHO it's scoped to. */
-const AFFIX_SCOPE = {
-  onKill: 'target', onDamageTaken: 'attacker', onHitLanded: 'defender',
-  // onHitResolve fires for either attack direction (resolvers.js) -- every
-  // affix that uses it today (Toxic) reacts to the affixed enemy attacking
-  // the player, so it scopes on 'attacker', not 'defender'.
-  onHitResolve: 'attacker', getDamage: 'defender'
-};
-
-export function installAffix(dispatcher, def, entity) {
+/* Phase 10: Relics/Discs/Requiems have no level concept (tech §3's own
+   schemas never gave them one) -- one shared installer, no
+   resolveLevelData/minLevel gating, unlike installFragment. Requiems have
+   no live in-run selection flow yet (no Act III/Altar exists -- flagged
+   in the phase report), but the installer is real so the moment one does
+   exist it has somewhere to call. */
+function installUnleveled(dispatcher, def) {
   (def.effects || []).forEach(eff => {
     const fn = EFFECT_LIB[eff.fn];
     const priority = eff.priority == null ? PRIORITY.ADD : eff.priority;
-    const field = AFFIX_SCOPE[eff.hook];
-    const data = { ...(eff.data || {}), self: entity };
-    dispatcher.effect(eff.hook, priority, ctx => {
-      if (field) {
-        const matches = ctx[field] === entity;
-        if (eff.scopeInvert ? matches : !matches) return;
-      }
-      fn(ctx, data);
-    }, def.id + ':' + entity.id);
+    dispatcher.effect(eff.hook, priority, ctx => fn(ctx, eff.data || {}), def.id);
   });
   (def.queries || []).forEach(q => {
     const fn = QUERY_LIB[q.fn];
     const priority = q.priority == null ? PRIORITY.MULTIPLY : q.priority;
-    const field = AFFIX_SCOPE[q.hook];
-    const data = { ...(q.data || {}), self: entity };
-    dispatcher.query(q.hook, priority, (value, ctx) => {
-      if (field) {
-        const matches = ctx[field] === entity;
-        if (q.scopeInvert ? matches : !matches) return value;
-      }
-      return fn(value, ctx, data);
-    }, def.id + ':' + entity.id);
+    dispatcher.query(q.hook, priority, (value, ctx) => fn(value, ctx, q.data || {}), def.id);
   });
 }
+export function installRelic(dispatcher, def) { installUnleveled(dispatcher, def); }
+export function installDisc(dispatcher, def) { installUnleveled(dispatcher, def); }
+export function installRequiem(dispatcher, def) { installUnleveled(dispatcher, def); }
+export function installDuo(dispatcher, def) { installUnleveled(dispatcher, def); }
+
+/* installAffix moved to content_registry_affix.js (Phase 10, 300-line cap) --
+   affixes.js/encounter.js import it from there directly now. */

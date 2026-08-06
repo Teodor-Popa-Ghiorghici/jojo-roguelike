@@ -55,6 +55,46 @@ export const STATUS_DEFS = {
     breaksOnHits: 3, // GDD: "breaks on 3rd hit" -- read by whatever applies damage; not wired to combat this phase
     damageTakenMult: 1.25, // GDD: "damage taken +25%" -- same: data is real, no consumer yet
     frozenSolid: true // engine-recognized flag reserved for AI/movement lockout, unread this phase
+  },
+
+  /* Phase 10 (Echoes ACT3 donor, GDD §6.1 "Gravity, slow, grounding,
+     weight"): a boolean debuff, no self-tick -- consumed by
+     item_effect_lib.js's bonusIfDefenderStatus/poiseBonusIfDefenderStatus
+     query verbs the same way Frozen is consumed by resolveDamage's
+     unconditional read, except Gravity's payoff is content-authored
+     (which query a Fragment attaches it to) rather than an engine-wide
+     unconditional multiplier -- there is no single canon "what Gravity
+     does" the way Frozen's +25% damage is specified, so the status itself
+     only carries the flag; donor content decides the payoff. */
+  gravity: {
+    id: 'gravity', name: 'Gravity', stackRule: STACK_RULES.REFRESH, maxStacks: 1,
+    durationFrames: 180, // 3s
+    tickRateFrames: 0,
+    tags: ['gravity', 'crowd-control']
+  },
+
+  /* Phase 10 (Red Hot Chili Pepper donor, GDD §6.1 "Charge, chain damage,
+     environment"): a stacking store, mirrors Virus's STACK rule but with
+     no self-tick of its own -- Charge is consumed for a payoff
+     (item_effect_lib.js's consumeStatusForBonus, generalized from Phase 7's
+     consumeVirusForBonus) rather than ticking damage on its own clock. */
+  charge: {
+    id: 'charge', name: 'Charge', stackRule: STACK_RULES.STACK, maxStacks: 10,
+    durationFrames: 240, // 4s
+    tickRateFrames: 0,
+    tags: ['electric']
+  },
+
+  /* Phase 10 (Hermit Purple donor, GDD §6.1 "rerolls, foresight, Mark,
+     economy"): a boolean debuff read by the same generic
+     bonusIfDefenderStatus/consumeStatusForBonus verbs Gravity/Charge use --
+     Mark's own identity is "the thing Hermit Purple Fragments amplify or
+     consume", not a bespoke mechanic of its own. */
+  mark: {
+    id: 'mark', name: 'Marked', stackRule: STACK_RULES.REFRESH, maxStacks: 1,
+    durationFrames: 240, // 4s
+    tickRateFrames: 0,
+    tags: ['mark']
   }
 };
 

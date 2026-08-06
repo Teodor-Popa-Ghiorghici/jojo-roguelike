@@ -20,7 +20,7 @@
 import { PAL } from './data.js';
 import { spawnHazard } from './hazards.js';
 import { spawnMinions } from './summons.js';
-import { installAffix } from './content_registry.js';
+import { installAffix } from './content_registry_affix.js';
 
 export const AFFIXES = {
   bomb_primed: {

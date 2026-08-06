@@ -16,11 +16,20 @@
    fire hurts and looks/sounds like it". */
 
 import { applyDamage } from './fighter.js';
+import { gainMomentum } from './resources.js';
 
+/* `def.friendly` (Phase 10, Gold Experience donor's "life mote" -- GDD
+   §6.1: "plants a life mote; walking over it heals 4 and grants 10
+   Momentum") makes this a single-use PLAYER pickup instead of a repeating
+   damage zone: the player heals + gains Momentum once on proximity, then
+   the mote is gone, rather than ticking the same payoff every
+   `tickFrames`. Everything else (radius/lifeFrames) is shared with the
+   damage-zone path below, so both are still one generic system. */
 export function spawnHazard(combat, x, z, def) {
   combat.hazards.push({
     x, z, radius: def.radius, tickFrames: def.tickFrames, tickTimer: def.tickFrames,
-    dmg: def.dmg, life: def.lifeFrames
+    dmg: def.dmg, life: def.lifeFrames,
+    friendly: !!def.friendly, healAmount: def.healAmount, momentumAmount: def.momentumAmount
   });
 }
 
@@ -29,6 +38,17 @@ export function stepHazards(combat) {
   for (let i = combat.hazards.length - 1; i >= 0; i--) {
     const h = combat.hazards[i];
     h.life -= 1;
+    if (h.friendly) {
+      const dist = Math.hypot(player.x - h.x, player.z - h.z);
+      if (dist <= h.radius && player.hp > 0) {
+        player.hp = Math.min(player.maxHp, player.hp + (h.healAmount || 0));
+        if (h.momentumAmount) gainMomentum(player, h.momentumAmount);
+        combat.hazards.splice(i, 1);
+        continue;
+      }
+      if (h.life <= 0) combat.hazards.splice(i, 1);
+      continue;
+    }
     h.tickTimer -= 1;
     if (h.tickTimer <= 0 && player.hp > 0) {
       h.tickTimer = h.tickFrames;
