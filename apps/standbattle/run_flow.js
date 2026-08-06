@@ -18,31 +18,27 @@ import { ENEMIES, ENCOUNTERS, BOSSES, MODIFIERS, EVENTS, STANDS } from './data.j
 import { createCombat } from './combat.js';
 import { enterAct } from './act_flow.js';
 import {
-  generateOffer, applyOffer, ownedFragmentEntries, createRunFragmentState,
-  skipOfferForPity, PITY_THRESHOLD
+  generateOffer, applyOffer, ownedFragmentEntries, createRunFragmentState, PITY_THRESHOLD
 } from './fragment_offers.js';
 import { generateTreasureOffer, applyTreasureChoice } from './item_offers.js';
 import { createStatPipeline, resolveUpgradeSlotCount } from './stats.js';
 import { pickUpgradeSlot } from './rest.js';
-import {
-  decideCombatRewardKind, rollCombatYen, rollEliteYenBonus, fragmentPrice,
-  healCost, rerollCost, removalCost, canAfford, spend, earn
-} from './economy.js';
-import { raiseTension, resolveEncounterBudget, tensionRarityMult } from './tension.js';
-import {
-  createTelemetryCollector, recordOffer, recordTaken, recordEncounter,
-  recordYen, recordTension, appendRunSummary
-} from './telemetry.js';
+import { fragmentPrice, healCost, rerollCost, removalCost, canAfford, spend } from './economy.js';
+import { resolveEncounterBudget, tensionRarityMult } from './tension.js';
+import { createTelemetryCollector, recordOffer, recordTaken, recordTension } from './telemetry.js';
 import { wireCombatAudio, sfxActComplete } from './audio.js';
 import { musicSetIntensity } from './music.js';
 /* Phase 10 meta. Note which side of the firewall each of these sits on:
-   createMenaceProfile is Track B and returns nothing but numbers;
-   settleRun is the meta payout and writes only the meta blob. Neither the
-   Archive's unlock sets nor Fate ever reach anything below. */
+   createMenaceProfile is Track B and returns nothing but numbers; the meta
+   payout itself (settleRun) moved to run_flow_combat_end.js along with
+   the win/loss outcome functions that trigger it. Neither the Archive's
+   unlock sets nor Fate ever reach anything below. */
 import { createMenaceProfile, menaceRankOf } from './meta_menace.js';
-import { settleRun } from './run_end.js';
 import { createMissionCounters, attachMissionTracker, noteNodeCleared } from './mission_tracker.js';
 import { defaultAspectFor } from './aspects.js';
+
+const STALKER_BASE_CHANCE = 0.04; // GDD §4.7's "small base chance from Act 2"
+const STALKER_MENACE_BONUS = 0.01; // per Menace rank
 
 function defaultUpgradePoints(standId) {
   return resolveUpgradeSlotCount({ stand: STANDS[standId] || STANDS.star_platinum }, createStatPipeline());
@@ -74,6 +70,7 @@ export function createFreshRunState(seed, rng, standId, loadout) {
     bestChain: 0,
     upgradePointsMax: fragState.upgradePoints,
     telemetry: createTelemetryCollector(),
+    ruleFightsCleared: [], // GDD §10.3 Heaven Ascension's "a hidden Rule Fight cleared" leg -- see endgame.js
     ...fragState
   };
   /* A Keepsake is an ordinary owned Relic from the engine's point of view
@@ -110,12 +107,21 @@ function startCombatForNode(state, env, node) {
      Track A content. combat.js consumes them through two separate seams
      that never see each other. */
   const menace = menaceProfileFor(rs);
+  const menaceRank = menaceRankOf(rs.menacePact);
   const opts = {
     shakeEnabled: env.shakeEnabled, relics: rs.relics, duos: rs.duosOwned, discs: rs.discsBySlot,
-    standId: rs.standId, aspectId: rs.aspectId, menace, menaceRank: menaceRankOf(rs.menacePact)
+    standId: rs.standId, aspectId: rs.aspectId, menace, menaceRank
   };
+  /* GDD §4.7 The Stalker: "Menace-gated, plus a small base chance from Act
+     2." Rolled from the run's own seeded RNG (invariant 7), on a plain
+     combat node only -- never overriding an Elite/boss/objective node, so
+     it reads as an intrusion into an ordinary fight, not a replacement of
+     one already promised to be special. */
+  const stalkerChance = rs.act >= 2 && node.type === 'combat' ? STALKER_BASE_CHANCE + menaceRank * STALKER_MENACE_BONUS : 0;
+  const isStalker = stalkerChance > 0 && state.runRng.stream('stalker').chance(stalkerChance);
   let target;
-  if (node.type === 'boss') { target = BOSSES[node.boss]; }
+  if (isStalker) { target = ENCOUNTERS.the_stalker; }
+  else if (node.type === 'boss') { target = BOSSES[node.boss]; }
   else if (node.encounter) { target = tensionScaledEncounter(ENCOUNTERS[node.encounter], rs.tension); }
   else {
     target = ENEMIES[node.enemy];
@@ -233,51 +239,7 @@ export function commitNode(state, env) {
   }
 }
 
-/* GDD §9.5: a win and a loss now leave the run by the SAME door. Both pay
-   Fate, Archive entries, Bond progress and Mission progress, and both land
-   on the TO BE CONTINUED screen -- "death is never zero" is a property of
-   there being only one exit, not of two exits that happen to agree. */
-function finishRun(state, env, outcome, killer) {
-  const rs = state.runState;
-  if (state.combat) state.combat.dispatcher.fire('onRunEnd', { outcome, act: rs.act });
-  state.summary = settleRun(env.meta, rs, { outcome, killer });
-  env.saveStore.saveMeta(env.meta);
-  appendRunSummary(env.ctx, { seed: rs.seed, stand: rs.standId, actReached: rs.act, killer, collector: rs.telemetry });
-  env.saveStore.clearRun();
-  state.scene = 'continued';
-}
-
-export function finishRunLoss(state, env) {
-  const rs = state.runState;
-  const node = rs.graph.nodes[state.enteringNodeId || rs.nodeId];
-  finishRun(state, env, 'loss', node.boss || node.encounter || node.enemy || null);
-}
-
-export function onCombatWin(state, env) {
-  const rs = state.runState;
-  rs.hp = state.combat.player.hp;
-  const node = rs.graph.nodes[state.enteringNodeId];
-  recordEncounter(rs.telemetry, (env.tsec - state.combatStartTsec) * 1000);
-  const rewardRng = state.runRng.stream('rewards');
-  if (node.type === 'boss') {
-    enterReward(state, env, true);
-  } else if (node.type === 'elite') {
-    raiseTension(rs, 1);
-    const bonus = rollEliteYenBonus(rewardRng);
-    earn(rs, bonus); recordYen(rs.telemetry, bonus, 0);
-    enterReward(state, env, true);
-  } else if (state.combat.bountyEarly) {
-    // GDD §15 Bounty: "killing it ends the fight early for bonus Yen" -- the same elite bonus roll, a different trigger.
-    const bonus = rollEliteYenBonus(rewardRng);
-    earn(rs, bonus); recordYen(rs.telemetry, bonus, 0);
-    skipOfferForPity(rs);
-    commitNode(state, env);
-  } else if (decideCombatRewardKind(rewardRng, rs) === 'yen') {
-    const amount = rollCombatYen(rewardRng);
-    earn(rs, amount); recordYen(rs.telemetry, amount, 0);
-    skipOfferForPity(rs);
-    commitNode(state, env);
-  } else {
-    enterReward(state, env, false);
-  }
-}
+/* Phase 11-B: what happens once a fight settles ('win'/'lose'/'fled') --
+   split into run_flow_combat_end.js (300-line cap), re-exported here so
+   index.js's existing import site needs no change. */
+export { onCombatFled, finishRunLoss, onCombatWin } from './run_flow_combat_end.js';

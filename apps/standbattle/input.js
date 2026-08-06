@@ -19,7 +19,8 @@ export const DEFAULT_KEYMAP = {
   KeyJ: 'light', KeyK: 'medium', KeyL: 'heavy',
   Space: 'dodge', ShiftLeft: 'parry', ShiftRight: 'parry',
   KeyU: 'special', KeyI: 'rush', KeyG: 'guard', KeyF: 'project',
-  KeyC: 'command' // GDD §3.4 (Phase 9a): Long-Range's "command a reposition" order, a second key
+  KeyC: 'command', // GDD §3.4 (Phase 9a): Long-Range's "command a reposition" order, a second key
+  Escape: 'flee' // GDD §4.7/§15: Stalker/Survive "leave the node early, forfeit the reward" -- a no-op key everywhere else
 };
 
 /* forward/back (tech §5 Phase 1) move on the belt plane's z (depth) axis
@@ -29,7 +30,7 @@ export const DEFAULT_KEYMAP = {
    and Project (GDD §3.4, Phase 4) are held the same way -- both matter
    every frame they're down, not on press. */
 export const HELD_ACTIONS = new Set(['left', 'right', 'forward', 'back', 'guard', 'project', 'command']);
-export const EDGE_ACTIONS = new Set(['light', 'medium', 'heavy', 'special', 'rush', 'dodge', 'parry']);
+export const EDGE_ACTIONS = new Set(['light', 'medium', 'heavy', 'special', 'rush', 'dodge', 'parry', 'flee']);
 
 const RING_SIZE = 64;
 

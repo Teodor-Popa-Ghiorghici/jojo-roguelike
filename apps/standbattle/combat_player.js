@@ -263,7 +263,10 @@ export function updatePlayer(combat) {
   if (player.state === 'attack') {
     updateAttack(combat);
   } else if (player.state === 'dodge') {
-    const dx = defense.stepDodgeMovement(player, PLAYER_SPEED_PER_FRAME * 1.6);
+    // Formaggio's Shrink Rule Fight (GDD §4.5): "+80% Step distance" -- dodge distance now goes through
+    // the same getMoveSpeed query ordinary movement already reads, instead of a bare literal (a real gap this closes).
+    const dodgeSpeedMult = combat.dispatcher.runQuery('getMoveSpeed', 1, { entity: player });
+    const dx = defense.stepDodgeMovement(player, PLAYER_SPEED_PER_FRAME * 1.6 * dodgeSpeedMult);
     if (dx) player.x = clamp(player.x + dx, ARENA_MIN, ARENA_MAX);
     if (player.stateTimer <= 0) { player.state = 'idle'; player.invulnerable = false; tryConsumeBuffer(combat); }
   } else if (player.state === 'guard') {

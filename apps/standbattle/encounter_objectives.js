@@ -19,6 +19,12 @@
 import { spawnWave } from './encounter.js';
 import { spawnHazard } from './hazards.js';
 import { ARENA_MIN, ARENA_MAX, Z_REST, SIM_HZ } from './constants.js';
+import {
+  rf_sheer_heart_attack, rf_illusos_mirror, rf_formaggios_shrink, rf_baby_face
+} from './rule_fights.js';
+import {
+  rf_yellow_temperance, rf_rolling_stones, rf_bites_the_dust, rf_cheap_trick
+} from './rule_fights_2.js';
 
 const BOUNTY_BUFF_INTERVAL = 3 * SIM_HZ; // GDD §15: "ignoring it lets it buff the others" -- ticks, not a lump sum
 const BOUNTY_BUFF_MULT = 1.12;
@@ -137,9 +143,17 @@ export const OBJECTIVES = {
       if (encounter.bountyTarget && encounter.bountyTarget.hp <= 0) { combat.bountyEarly = true; return true; }
       return combat.enemies.every(e => e.hp <= 0);
     }
-  }
+  },
   /* Sudden Death needs no entry here: a wave enemy's own `flees: true`
      field (read in encounter.js's spawnWave) plus the ordinary killAll
      winCondition is the whole objective -- see combat_enemy.js's 'flee'
      AI state. */
+
+  /* GDD §4.5 Rule Fights -- structurally just 8 more objective ids (the
+     encounter.js docstring's own prediction since Phase 5). Split across
+     rule_fights.js/rule_fights_2.js for the 300-line cap; merged in here
+     so stepEncounter's single OBJECTIVES lookup never has to know which
+     file an id came from. */
+  rf_sheer_heart_attack, rf_illusos_mirror, rf_formaggios_shrink, rf_baby_face,
+  rf_yellow_temperance, rf_rolling_stones, rf_bites_the_dust, rf_cheap_trick
 };

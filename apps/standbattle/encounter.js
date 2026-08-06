@@ -87,6 +87,7 @@ export function spawnWave(combat, waveDef, waveIndex, opts, rng) {
     enemy.waveIndex = waveIndex;
     enemy.spawnX = enemy.x; // Phase 9b Leashed's own anchor point
     enemy.ai = createEnemyAI(def.phases ? def.phases[0].attackPatterns : def.attackPatterns);
+    enemy.ai.recoveryMult = def.recoveryMult || 1; // GDD §5 Boss Reprises' "different signature timing" -- see resolvers.js
     enemy.brain = enemy.ai;
     initPoise(enemy, def);
     initParts(enemy, def); // Phase 6 -- a no-op array for every def without a `parts` field
