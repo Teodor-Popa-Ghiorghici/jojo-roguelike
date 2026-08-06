@@ -16,7 +16,13 @@ export function createTelemetryCollector() {
 }
 
 export function recordOffer(collector, offer) {
-  offer.forEach(c => collector.fragmentsOffered.push(c.frag.id));
+  // A reward offer mixes Fragment/Duo/Relic/Disc candidates (Phase 10) --
+  // each carries its id under a different field keyed by `kind`, same
+  // shape run_choices.js's applyRewardChoice already switches on.
+  offer.forEach(c => {
+    const id = c.kind === 'duo' ? c.duo.id : c.kind === 'relic' ? c.relic.id : c.kind === 'disc' ? c.disc.id : c.frag.id;
+    collector.fragmentsOffered.push(id);
+  });
 }
 export function recordTaken(collector, fragId) {
   collector.fragmentsTaken.push(fragId);

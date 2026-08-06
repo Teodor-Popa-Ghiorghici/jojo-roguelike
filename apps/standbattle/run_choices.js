@@ -73,11 +73,17 @@ export function applyShopAction(state, action, env) {
   const priced = n => Math.round(n * priceMult);
   if (action.type === 'buy') {
     const offer = state.shop.offer[0];
-    const cost = priced(fragmentPrice(offer.frag.rarity));
+    // Phase 12 fix: the Shop's single-slot offer is drawn from the exact
+    // same candidate pool a reward offer is (fragment_offers.js's
+    // buildCandidates), which legitimately mixes in Duo candidates once a
+    // run owns Fragments from two of a Duo's donors -- this branch was
+    // Fragment-only and crashed on `.frag` the first time that happened.
+    const rarity = offer.kind === 'duo' ? offer.duo.rarity : offer.frag.rarity;
+    const cost = priced(fragmentPrice(rarity));
     if (!canAfford(rs, cost)) return;
     spend(rs, cost); recordYen(rs.telemetry, 0, cost);
     applyOffer(rs, offer);
-    recordTaken(rs.telemetry, offer.frag.id);
+    recordTaken(rs.telemetry, offer.kind === 'duo' ? offer.duo.id : offer.frag.id);
     state.shop.offer = [];
   } else if (action.type === 'heal') {
     const cost = priced(healCost(rs.maxHp - rs.hp));

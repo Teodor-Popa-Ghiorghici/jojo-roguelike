@@ -36,6 +36,10 @@ import { musicSetIntensity } from './music.js';
 import { createMenaceProfile, menaceRankOf } from './meta_menace.js';
 import { createMissionCounters, attachMissionTracker, noteNodeCleared } from './mission_tracker.js';
 import { defaultAspectFor } from './aspects.js';
+// Phase 12 fix: commitNode's Act IV boss-clear branch calls finishRun (the
+// run's win/loss exit) but this file never imported it -- reachable only by
+// actually winning the game, so a full run sweep at scale is what surfaced it.
+import { finishRun } from './run_flow_combat_end.js';
 
 const STALKER_BASE_CHANCE = 0.04; // GDD §4.7's "small base chance from Act 2"
 const STALKER_MENACE_BONUS = 0.01; // per Menace rank
@@ -66,6 +70,8 @@ export function createFreshRunState(seed, rng, standId, loadout) {
        (spec §7), which is the entire point of the two-track split. */
     donors: lo.donors || null,
     menacePact: lo.menacePact || {},
+    // GDD §21 Ripple Assist -- {clash, step, damage} booleans; blocks nothing but Menace rank records (run_end.js).
+    assist: lo.assist || null,
     missionCounters: createMissionCounters(),
     bestChain: 0,
     upgradePointsMax: fragState.upgradePoints,
@@ -109,8 +115,9 @@ function startCombatForNode(state, env, node) {
   const menace = menaceProfileFor(rs);
   const menaceRank = menaceRankOf(rs.menacePact);
   const opts = {
-    shakeEnabled: env.shakeEnabled, relics: rs.relics, duos: rs.duosOwned, discs: rs.discsBySlot,
-    standId: rs.standId, aspectId: rs.aspectId, menace, menaceRank
+    shakeEnabled: env.shakeEnabled, flashEnabled: env.flashEnabled, reduceParticles: env.reduceParticles,
+    relics: rs.relics, duos: rs.duosOwned, discs: rs.discsBySlot,
+    standId: rs.standId, aspectId: rs.aspectId, menace, menaceRank, assist: rs.assist
   };
   /* GDD §4.7 The Stalker: "Menace-gated, plus a small base chance from Act
      2." Rolled from the run's own seeded RNG (invariant 7), on a plain

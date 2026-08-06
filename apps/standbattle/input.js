@@ -34,14 +34,21 @@ export const EDGE_ACTIONS = new Set(['light', 'medium', 'heavy', 'special', 'rus
 
 const RING_SIZE = 64;
 
-export function createInputSystem(savedKeymap) {
+/* GDD §21: Project switchable between hold (default -- matches every
+   other held action) and toggle (press once to engage, again to release).
+   `toggleProject` flips this per-system rather than adding a third entry
+   to HELD_ACTIONS/EDGE_ACTIONS, since it's the one action a player can
+   reclassify at will while every other action's kind stays fixed. */
+export function createInputSystem(savedKeymap, toggleProject) {
   const keymap = Object.assign({}, DEFAULT_KEYMAP, savedKeymap || {});
   const heldState = {};
   const ring = [];
   let frame = 0;
+  let projectToggled = false;
 
   return {
     keymap,
+    setToggleProject(on) { toggleProject = on; if (!on) projectToggled = false; },
 
     /* Advances the frame counter the ring buffer timestamps against. Call
        once per render tick. This is a wall-clock frame count, not yet the
@@ -66,6 +73,16 @@ export function createInputSystem(savedKeymap) {
       const action = keymap[code];
       if (!action) return null;
       const kind = this.kindOf(action);
+      if (action === 'project' && toggleProject) {
+        const was = heldState[action];
+        heldState[action] = down;
+        if (down && !was) {
+          projectToggled = !projectToggled;
+          ring.push({ action, frame });
+          if (ring.length > RING_SIZE) ring.shift();
+        }
+        return { action, kind: 'edge', down: projectToggled };
+      }
       const was = heldState[action];
       heldState[action] = down;
       if (kind === 'edge' && down && !was) {

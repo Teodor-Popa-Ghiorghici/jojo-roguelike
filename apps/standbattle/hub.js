@@ -124,6 +124,8 @@ export function launchLoadout(meta, unlocks) {
     aspectId: lo.aspectId || null,
     keepsakeId: lo.keepsakeId || null,
     menacePact: pactFor(meta.menace, standId),
-    donors: [...unlocks.donors]
+    donors: [...unlocks.donors],
+    // GDD §21 Ripple Assist -- persistent accessibility toggles (appbar), not a per-run choice.
+    assist: meta.assist || null
   };
 }

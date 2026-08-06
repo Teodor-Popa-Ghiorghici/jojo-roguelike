@@ -10,7 +10,8 @@
     "build": "echo 'No build step required'",
     "validate": "node apps/standbattle/scripts/validate.js",
     "assert": "node apps/standbattle/scripts/assert.js",
-    "sweep": "node apps/standbattle/scripts/sweep.js"
+    "sweep": "node apps/standbattle/scripts/sweep.js",
+    "telemetry-sim": "node apps/standbattle/scripts/telemetry_sim.js"
   },
   "dependencies": {
     "express": "^4.21.2"

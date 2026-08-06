@@ -87,7 +87,7 @@ export function createCombat(enemyOrEncounterDef, ownedFragments, opts, rng) {
   (opts.duos || []).forEach(id => { const def = duoById.get(id); if (def) installDuo(dispatcher, def); });
   Object.values(opts.discs || {}).forEach(id => { const def = discById.get(id); if (def) installDisc(dispatcher, def); });
 
-  const player = createPlayerFighter(standDef, ARENA_MIN + 122);
+  const player = createPlayerFighter(standDef, ARENA_MIN + 122, null, opts.assist);
   player.maxPersistence = dispatcher.runQuery('getMaxPersistence', player.maxPersistence, { entity: player });
   clampPersistence(player);
   /* No bespoke sprite per Stand yet (data.js's STANDS.<id>.tint comment) --
@@ -127,6 +127,13 @@ export function createCombat(enemyOrEncounterDef, ownedFragments, opts, rng) {
     dispatcher.query('getDamage', PRIORITY.MULTIPLY, (v, qctx) =>
       (qctx && qctx.isPlayerAttacker) ? v : v * menace.enemyDamageMult, 'menace');
   }
+  /* Ripple Assist's third dial (GDD §21): incoming damage x0.7. Same
+     getDamage seam as menace's enemyDamageMult above, composed rather than
+     overwritten -- assist and Menace can both be active on the same fight. */
+  if (opts.assist && opts.assist.damage) {
+    dispatcher.query('getDamage', PRIORITY.MULTIPLY, (v, qctx) =>
+      (qctx && qctx.isPlayerAttacker) ? v : v * 0.7, 'assist');
+  }
   /* Phase 10 (Crazy Diamond donor's "return-to-position" identity, GDD
      §6.1): a fixed snapshot of the User's own starting spot, read by
      item_effect_lib.js's returnToAnchor -- no per-encounter "restore
@@ -147,7 +154,7 @@ export function createCombat(enemyOrEncounterDef, ownedFragments, opts, rng) {
   const combatRng = rng.stream('combat'); // reserved since Phase 0, now used for crit rolls (resolvers.js)
   const encounterRng = rng.stream('encounter'); // Phase 5 -- encounter_budget.js's composition draws, kept separate
 
-  const juice = createJuice(opts.shakeEnabled);
+  const juice = createJuice(opts.shakeEnabled, opts.reduceParticles);
   const keys = {};
   function push(msg) { combat.log.unshift(msg); combat.log.length = Math.min(4, combat.log.length); }
 
@@ -171,7 +178,10 @@ export function createCombat(enemyOrEncounterDef, ownedFragments, opts, rng) {
       armorAll: menace.enemyArmorAll, extraEnemies: menace.extraEnemies
     },
     outcome: 'fighting', banner: '', bannerTimer: 84, // 1400ms
-    log: [], pushLog: push, debug: false
+    log: [], pushLog: push, debug: false,
+    // GDD §21 accessibility: read once by render.js's lazy createFx(); live
+    // toggles go through combat._fx.setFlashEnabled/setReduceParticles.
+    flashEnabled: opts.flashEnabled !== false, reduceParticles: !!opts.reduceParticles
   };
 
   const encounterDef = normalizeEncounter(enemyOrEncounterDef);
