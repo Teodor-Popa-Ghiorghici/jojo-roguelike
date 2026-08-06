@@ -20,6 +20,7 @@ import { generateEncounterBudget } from './encounter_budget.js';
 import { rollAffixes, applyAffixesToEnemy } from './affixes.js';
 import { initSummonState } from './summons.js';
 import { installAffix } from './content_registry_affix.js';
+import { OBJECTIVES } from './encounter_objectives.js';
 import { ARENA_MAX, Z_REST } from './constants.js';
 
 export const WAVE_TELEGRAPH_FRAMES = 90; // 1.5s, GDD §4.4: "later waves telegraph 1.5s before arriving"
@@ -68,7 +69,7 @@ function installNativeAbilities(dispatcher, def, enemy) {
   }
 }
 
-function spawnWave(combat, waveDef, waveIndex, opts, rng) {
+export function spawnWave(combat, waveDef, waveIndex, opts, rng) {
   const spawned = [];
   /* Crowded (GDD §8.3): +N bodies per wave, drawn from the wave's own
      type list so the composition stays the encounter's, only larger. */
@@ -86,12 +87,15 @@ function spawnWave(combat, waveDef, waveIndex, opts, rng) {
     enemy.waveIndex = waveIndex;
     enemy.spawnX = enemy.x; // Phase 9b Leashed's own anchor point
     enemy.ai = createEnemyAI(def.phases ? def.phases[0].attackPatterns : def.attackPatterns);
+    enemy.ai.recoveryMult = def.recoveryMult || 1; // GDD §5 Boss Reprises' "different signature timing" -- see resolvers.js
     enemy.brain = enemy.ai;
     initPoise(enemy, def);
     initParts(enemy, def); // Phase 6 -- a no-op array for every def without a `parts` field
     initPurge(enemy); // Phase 6 -- a no-op until `purgeAtHpFrac` is set
     initSummonState(enemy, def); // Phase 9b -- a no-op until a `summon` field is set (Puppeteer/Caller)
     installNativeAbilities(combat.dispatcher, def, enemy);
+    // GDD §15 Sudden Death: starts the AI in 'flee' (combat_enemy.js) instead of 'approach', a no-op flag otherwise.
+    if (def.flees) enemy.ai.state = 'flee';
     /* GDD §4.3: elites roll 1-2 affixes, Menace ranks add rolls. No real
        elite-node/Menace propagation from the map/run layer exists yet
        (encounter_budget.js's own comment: Menace "not implemented yet") --
@@ -131,9 +135,21 @@ function spawnWave(combat, waveDef, waveIndex, opts, rng) {
    "all (zero) remaining enemies dead" the instant an earlier wave clears. */
 export function stepEncounter(combat, encounter, opts, rng) {
   const waves = encounter.def.waves;
+  const objective = OBJECTIVES[encounter.def.objective];
   if (encounter.waveIndex === -1) {
     spawnWave(combat, waves[0], 0, opts, rng);
     encounter.waveIndex = 0;
+    if (objective && objective.onStart) objective.onStart(combat, encounter, rng);
+    return;
+  }
+
+  if (objective && objective.onTick) objective.onTick(combat, encounter, rng);
+  /* An objective with its own checkWin (Survive/Bounty) owns the win
+     decision outright -- e.g. Survive must NOT fall through to the
+     ordinary killAll floor below just because its one starting wave died,
+     or its 30s hold would resolve the instant that wave's dead. */
+  if (objective && objective.checkWin) {
+    if (combat.outcome === 'fighting' && objective.checkWin(combat, encounter)) combat.outcome = 'win';
     return;
   }
 

@@ -77,6 +77,17 @@ export function stepEnemyMovementAndAI(combat, enemy, aiRng) {
 
   const dist = Math.abs(player.x - enemy.x);
   enemy.moving = false;
+  /* GDD §15 Sudden Death: a `flees: true` enemy (encounter.js's spawnWave
+     starts its AI here) runs away instead of closing distance, and never
+     enters the attack-pattern state machine below -- "chase it across the
+     arena", not a normal fight. Also the generic escape behavior GDD §17
+     wants for the Stalker later. */
+  if (enemy.ai.state === 'flee') {
+    const dir = player.x > enemy.x ? -1 : 1;
+    enemy.x = Math.max(ARENA_MIN, Math.min(ARENA_MAX, enemy.x + dir * enemy.speedPxPerFrame));
+    enemy.moving = true;
+    return;
+  }
   if (enemy.ai.state === 'approach') {
     const dir = player.x > enemy.x ? 1 : -1;
     // Phase 9b Leashed: never closes distance past its own spawn point, generic on the optional affix flag.

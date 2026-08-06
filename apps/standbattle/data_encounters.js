@@ -17,6 +17,18 @@
 import {
   BOSS_YUYA_FUNGAMI, BOSS_HOL_HORSE, BOSS_NDOUL, BOSS_FORMAGGIO, BOSS_ILLUSO, BOSS_FUNNY_VALENTINE
 } from './data_bosses.js';
+import { ENEMIES } from './data_enemies.js';
+import { BOSS_REPRISES } from './boss_reprise.js';
+
+/* GDD §15 Sudden Death: "A single enemy at 1 HP that flees; chase it
+   across the arena for a Fragment." A plain enemy def with `hp: 1` and
+   `flees: true` (encounter.js's spawnWave starts its AI in 'flee' --
+   combat_enemy.js) -- no bespoke chase system, the existing killAll
+   winCondition ends the fight the instant it's caught and hit once. */
+const PANICKED_LOOTER = {
+  ...ENEMIES.knife_thug, id: 'panicked_looter', name: 'PANICKED LOOTER', hp: 1,
+  speedPx: ENEMIES.knife_thug.speedPx * 1.3, flees: true
+};
 
 export const ENCOUNTERS = {
   /* ---- Act I -- Morioh --------------------------------------------- */
@@ -42,6 +54,93 @@ export const ENCOUNTERS = {
   yuya_fungami_elite: {
     id: 'yuya_fungami_elite', label: 'HIGHWAY STAR', winCondition: 'killAll',
     waves: [{ types: [BOSS_YUYA_FUNGAMI] }]
+  },
+
+  /* ---- GDD §15 encounter objectives -- Act I --------------------------- */
+  morioh_alley_ambush: {
+    id: 'morioh_alley_ambush', label: 'CAUGHT IN THE ALLEY', objective: 'ambush', winCondition: 'killAll',
+    waves: [{ types: ['morioh_thug', 'knife_thug', 'morioh_thug'] }]
+  },
+  kameyu_holdout: {
+    id: 'kameyu_holdout', label: 'HOLD THE FLOOR', objective: 'survive', winCondition: 'killAll', fleeable: true,
+    surviveSpawn: { everyFrames: 300, budget: 2, pool: ['morioh_thug', 'knife_thug'] }, // every 5s
+    waves: [{ types: ['morioh_thug'] }]
+  },
+  shopping_street_pinned: {
+    id: 'shopping_street_pinned', label: 'PINNED DOWN', objective: 'pinned', winCondition: 'killAll',
+    waves: [{ types: ['knife_thug', 'knife_thug'] }]
+  },
+  loading_dock_blaze: {
+    id: 'loading_dock_blaze', label: 'LOADING DOCK BLAZE', objective: 'hazard', winCondition: 'killAll',
+    arenaHazards: [
+      { delay: 90, repeat: 240, hazard: { radius: 50, tickFrames: 20, dmg: 5, lifeFrames: 180 } },
+      { delay: 210, repeat: 240, hazard: { radius: 44, tickFrames: 20, dmg: 5, lifeFrames: 180 } }
+    ],
+    waves: [{ types: ['morioh_thug', 'knife_thug'] }]
+  },
+  kameyu_bounty: {
+    id: 'kameyu_bounty', label: 'MARKED MAN', objective: 'bounty', winCondition: 'killAll',
+    waves: [{ types: ['brute', 'morioh_thug', 'knife_thug'] }] // bountyIndex defaults to 0 -- the Brute
+  },
+  morioh_sudden_death: {
+    id: 'morioh_sudden_death', label: 'GRAB THE LOOT', winCondition: 'killAll',
+    waves: [{ types: [PANICKED_LOOTER] }]
+  },
+
+  /* GDD §4.7 The Stalker: "an invading Stand user... announced by a
+     screen-wide ゴゴゴゴ and a distinct motif... ALWAYS fleeable." One
+     generic def reused across every Act from run_flow.js's node-entry
+     roll (never a fixed map node of its own, matching "enters a node
+     uninvited") -- `fleeable: true` is the same field Survive opts into
+     (encounter.js's spawnWave/combat.js's setKey), `bestLoot: true` is
+     read by run_flow.js's onCombatWin to route the drop through the same
+     guaranteed-Rare+ reward path an Elite/boss already gets. */
+  the_stalker: {
+    id: 'the_stalker', label: 'ゴゴゴゴゴゴゴゴ', winCondition: 'killAll', fleeable: true, bestLoot: true,
+    waves: [{
+      types: [{
+        id: 'the_stalker', name: 'THE STALKER', baseType: 'elite',
+        hp: 140, power: 8, speedPx: 150, precision: 7, poise: 60,
+        attackPatterns: ['sweep', 'projectile', 'telegraphed_slam']
+      }]
+    }]
+  },
+
+  /* ---- GDD §4.5 Rule Fights -- launch set, Act I dressing --------------
+     Authored once each (rule_fights.js/rule_fights_2.js); "re-appears with
+     different enemy compositions" (GDD) means later Acts wrap the same 8
+     `objective` ids around their own roster, not new rule code. */
+  budogaoka_sheer_heart_attack: {
+    id: 'budogaoka_sheer_heart_attack', label: 'SHEER HEART ATTACK', objective: 'rf_sheer_heart_attack', winCondition: 'killAll',
+    waves: [{ types: ['brute'] }]
+  },
+  kameyu_illusos_mirror: {
+    id: 'kameyu_illusos_mirror', label: "ILLUSO'S MIRROR", objective: 'rf_illusos_mirror', winCondition: 'killAll',
+    waves: [{ types: ['knife_thug'] }]
+  },
+  alley_formaggios_shrink: {
+    id: 'alley_formaggios_shrink', label: "FORMAGGIO'S SHRINK", objective: 'rf_formaggios_shrink', winCondition: 'killAll',
+    waves: [{ types: ['morioh_thug'] }]
+  },
+  shopping_street_baby_face: {
+    id: 'shopping_street_baby_face', label: 'BABY FACE', objective: 'rf_baby_face', winCondition: 'killAll',
+    waves: [{ types: ['knife_thug'] }]
+  },
+  loading_dock_yellow_temperance: {
+    id: 'loading_dock_yellow_temperance', label: 'YELLOW TEMPERANCE', objective: 'rf_yellow_temperance', winCondition: 'killAll',
+    waves: [{ types: ['brute'] }]
+  },
+  park_rolling_stones: {
+    id: 'park_rolling_stones', label: 'ROLLING STONES', objective: 'rf_rolling_stones', winCondition: 'killAll',
+    waves: [{ types: ['morioh_thug'] }]
+  },
+  budogaoka_bites_the_dust: {
+    id: 'budogaoka_bites_the_dust', label: 'BITES THE DUST', objective: 'rf_bites_the_dust', winCondition: 'killAll',
+    waves: [{ types: ['knife_thug'] }]
+  },
+  alley_cheap_trick: {
+    id: 'alley_cheap_trick', label: 'CHEAP TRICK', objective: 'rf_cheap_trick', winCondition: 'killAll',
+    waves: [{ types: ['morioh_thug'] }]
   },
 
   /* ---- Act II -- Cairo pursuit --------------------------------------- */
@@ -100,5 +199,8 @@ export const ENCOUNTERS = {
   funny_valentine_elite: {
     id: 'funny_valentine_elite', label: 'FUNNY VALENTINE -- THE GAUNTLET', winCondition: 'killAll',
     waves: [{ types: [BOSS_FUNNY_VALENTINE] }]
-  }
+  },
+
+  // GDD §5's Boss Reprises -- 30 generated variant encounters (boss_reprise.js), id-keyed alongside everything above.
+  ...BOSS_REPRISES
 };

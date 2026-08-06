@@ -95,6 +95,20 @@ export const STATUS_DEFS = {
     durationFrames: 240, // 4s
     tickRateFrames: 0,
     tags: ['mark']
+  },
+
+  /* Phase 11-B, Cheap Trick's Rule Fight (GDD §4.5): "never turn your back
+     -- facing away applies stacking doom". Same shape as Frozen's
+     damageTakenMult -- a per-stack multiplier resolvers.js reads
+     unconditionally (see resolveDamage's frozen check) -- rather than a
+     bespoke one-fight mechanic, so any future "flee and get punished for
+     it" content reuses this instead of inventing its own stacking debuff. */
+  doom: {
+    id: 'doom', name: 'Doom', stackRule: STACK_RULES.STACK, maxStacks: 8,
+    durationFrames: 150, // 2.5s -- decays once the player stops running
+    tickRateFrames: 0,
+    damageTakenMultPerStack: 0.12,
+    tags: ['doom']
   }
 };
 

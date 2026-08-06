@@ -234,5 +234,11 @@ export function drawBanner(g, W, H, combat, tsec) {
       scale: 3, align: 'center', color: '#FF6B6B', outline: '#3A0A0A', shadow: '#7A1414', shadowDy: 2
     });
     text(g, 'CLICK TO RETURN', W / 2, 146, { scale: 1, align: 'center', color: '#C89090' });
+  } else if (combat.outcome === 'fled') {
+    // GDD §4.7/§15: fleeing forfeits the reward but is never framed as a loss.
+    text(g, 'FLED', W / 2, 118, {
+      scale: 3, align: 'center', color: '#B8C4E8', outline: '#0A0C16', shadow: '#3A3F5A', shadowDy: 2
+    });
+    text(g, 'CLICK TO CONTINUE', W / 2, 146, { scale: 1, align: 'center', color: '#C8D0F0' });
   }
 }

@@ -71,34 +71,65 @@ const ACT1_COMBAT_POOL = [
   { enemy: 'knife_thug' },
   { encounter: 'morioh_alley_scuffle' },
   { encounter: 'morioh_shopping_street' },
-  { encounter: 'kameyu_loading_dock' }
+  { encounter: 'kameyu_loading_dock' },
+  // GDD §15 encounter objectives -- near-free variety over the same combat-node pool.
+  { encounter: 'morioh_alley_ambush' },
+  { encounter: 'kameyu_holdout' },
+  { encounter: 'shopping_street_pinned' },
+  { encounter: 'loading_dock_blaze' },
+  { encounter: 'kameyu_bounty' },
+  { encounter: 'morioh_sudden_death' },
+  // GDD §4.5 Rule Fights (~1 in 6 combat nodes) -- weighted low relative to plain combat/objective entries below.
+  { encounter: 'budogaoka_sheer_heart_attack' },
+  { encounter: 'kameyu_illusos_mirror' },
+  { encounter: 'alley_formaggios_shrink' },
+  { encounter: 'shopping_street_baby_face' },
+  { encounter: 'loading_dock_yellow_temperance' },
+  { encounter: 'park_rolling_stones' },
+  { encounter: 'budogaoka_bites_the_dust' },
+  { encounter: 'alley_cheap_trick' }
 ];
 /* Act I's 2nd boss (Yuya Fungami/Highway Star) is an Elite-tier fight
    leading up to the true final boss, Killer Queen -- the same "N pre-boss
    Elites -> one final boss" shape GDD §5.1's act table reads as for every
    other Act below. */
-const ACT1_ELITE_POOL = [{ encounter: 'budogaoka_park_elite' }, { encounter: 'yuya_fungami_elite' }];
+// GDD §5 Boss Reprises: yuya_fungami's own 3 variants (boss_reprise.js) mixed alongside the vanilla fight.
+const ACT1_ELITE_POOL = [
+  { encounter: 'budogaoka_park_elite' }, { encounter: 'yuya_fungami_elite' },
+  { encounter: 'yuya_fungami_quickened' }, { encounter: 'yuya_fungami_reinforced' }, { encounter: 'yuya_fungami_scorched' }
+];
 const ACT1_EVENT_POOL = ['stray_cat', 'vending_machine', 'rokakaka_stand'];
 
 const ACT2_COMBAT_POOL = [
   { enemy: 'morioh_thug' }, { enemy: 'knife_thug' },
   { encounter: 'cairo_bazaar_ambush' }, { encounter: 'nile_docks_scuffle' }, { encounter: 'train_corridor_clash' }
 ];
-const ACT2_ELITE_POOL = [{ encounter: 'hol_horse_elite' }, { encounter: 'ndoul_elite' }];
+const ACT2_ELITE_POOL = [
+  { encounter: 'hol_horse_elite' }, { encounter: 'ndoul_elite' },
+  { encounter: 'hol_horse_quickened' }, { encounter: 'hol_horse_reinforced' }, { encounter: 'hol_horse_scorched' },
+  { encounter: 'ndoul_quickened' }, { encounter: 'ndoul_reinforced' }, { encounter: 'ndoul_scorched' }
+];
 const ACT2_EVENT_POOL = ['cairo_market_stall', 'sphinx_riddle'];
 
 const ACT3_COMBAT_POOL = [
   { enemy: 'morioh_thug' }, { enemy: 'knife_thug' },
   { encounter: 'piazza_gang_skirmish' }, { encounter: 'vineyard_ambush' }, { encounter: 'villa_hitmen' }
 ];
-const ACT3_ELITE_POOL = [{ encounter: 'formaggio_elite' }, { encounter: 'illuso_elite' }];
+const ACT3_ELITE_POOL = [
+  { encounter: 'formaggio_elite' }, { encounter: 'illuso_elite' },
+  { encounter: 'formaggio_quickened' }, { encounter: 'formaggio_reinforced' }, { encounter: 'formaggio_scorched' },
+  { encounter: 'illuso_quickened' }, { encounter: 'illuso_reinforced' }, { encounter: 'illuso_scorched' }
+];
 const ACT3_EVENT_POOL = ['vineyard_shrine', 'gondola_gambit'];
 
 const ACT4_COMBAT_POOL = [
   { enemy: 'brute' }, { enemy: 'knife_thug' },
   { encounter: 'ruin_gauntlet_skirmish' }, { encounter: 'voidscape_ambush' }
 ];
-const ACT4_ELITE_POOL = [{ encounter: 'funny_valentine_elite' }];
+const ACT4_ELITE_POOL = [
+  { encounter: 'funny_valentine_elite' },
+  { encounter: 'funny_valentine_quickened' }, { encounter: 'funny_valentine_reinforced' }, { encounter: 'funny_valentine_scorched' }
+];
 const ACT4_EVENT_POOL = ['reality_tear', 'echo_of_yourself'];
 
 /* GDD §5.1 act table: rows 9/10/10/11, ~7/~8/~8/~9 encounters. Bosses per

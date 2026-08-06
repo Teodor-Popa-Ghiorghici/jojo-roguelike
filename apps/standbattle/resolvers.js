@@ -103,8 +103,17 @@ export function resolveMoveFrames(entity, moveId, stats, bus) {
    rather than a number that happens to stay large. */
 export function resolvePatternFrames(enemy, patternId, menace) {
   const def = PATTERNS[patternId];
-  if (!def || !menace || menace.enemyRecoveryMult === 1) return def;
-  return { ...def, recoverFrames: Math.max(1, Math.round(def.recoverFrames * menace.enemyRecoveryMult)) };
+  if (!def) return def;
+  let mult = 1;
+  if (menace && menace.enemyRecoveryMult !== 1) mult *= menace.enemyRecoveryMult;
+  /* Phase 11-B Boss Reprises (GDD §5's "different signature timing"):
+     `enemy.recoveryMult` (encounter.js's spawnWave stamps it from
+     def.recoveryMult, a no-op field for every non-reprise enemy) composes
+     with Menace's own recovery multiplier instead of a second bespoke
+     scaling path -- still the one choke point, just two sources now. */
+  if (enemy && enemy.recoveryMult && enemy.recoveryMult !== 1) mult *= enemy.recoveryMult;
+  if (mult === 1) return def;
+  return { ...def, recoverFrames: Math.max(1, Math.round(def.recoverFrames * mult)) };
 }
 
 /* Precision -> crit chance (spec §2.1: "Precision — crit chance / status-
@@ -189,6 +198,11 @@ export function resolveDamage(ctx) {
      consumer, wired once here (invariant 5) rather than as a per-Fragment
      special case, so any future Frozen source gets the payoff for free. */
   if (ctx.defender && hasStatus(ctx.defender, 'frozen')) dmg *= STATUS_DEFS.frozen.damageTakenMult;
+  // Cheap Trick's Rule Fight (GDD §4.5): stacking Doom, same unconditional-read shape as Frozen above.
+  if (ctx.defender && hasStatus(ctx.defender, 'doom')) {
+    const doom = ctx.defender.statuses.find(s => s.id === 'doom');
+    dmg *= 1 + doom.stacks * STATUS_DEFS.doom.damageTakenMultPerStack;
+  }
 
   if (ctx.bus) {
     const tags = (ctx.hitbox && ctx.hitbox.tags) || (ctx.pattern && ctx.pattern.tags) || [];

@@ -250,8 +250,11 @@ export function updatePlayer(combat) {
        Close roots the User while Projected, Mid never roots it, Long
        redirects these same axes to the Stand and drives the User by
        retreat AI instead. `player.stand.controlScheme` is the data field
-       (GDD §3.4 deliverable 4: a table lookup, never a branch here). */
-    const scheme = CONTROL_SCHEMES[player.stand.controlScheme] || CONTROL_SCHEMES.close;
+       (GDD §3.4 deliverable 4: a table lookup, never a branch here).
+       GDD §15 Pinned: `combat.forceControlScheme` (encounter_objectives.js)
+       overrides it for a window regardless of the equipped Stand's own
+       class -- absent for every other fight. */
+    const scheme = CONTROL_SCHEMES[combat.forceControlScheme || player.stand.controlScheme] || CONTROL_SCHEMES.close;
     scheme.stepUser(combat, keys);
     return;
   }
@@ -260,7 +263,10 @@ export function updatePlayer(combat) {
   if (player.state === 'attack') {
     updateAttack(combat);
   } else if (player.state === 'dodge') {
-    const dx = defense.stepDodgeMovement(player, PLAYER_SPEED_PER_FRAME * 1.6);
+    // Formaggio's Shrink Rule Fight (GDD §4.5): "+80% Step distance" -- dodge distance now goes through
+    // the same getMoveSpeed query ordinary movement already reads, instead of a bare literal (a real gap this closes).
+    const dodgeSpeedMult = combat.dispatcher.runQuery('getMoveSpeed', 1, { entity: player });
+    const dx = defense.stepDodgeMovement(player, PLAYER_SPEED_PER_FRAME * 1.6 * dodgeSpeedMult);
     if (dx) player.x = clamp(player.x + dx, ARENA_MIN, ARENA_MAX);
     if (player.stateTimer <= 0) { player.state = 'idle'; player.invulnerable = false; tryConsumeBuffer(combat); }
   } else if (player.state === 'guard') {

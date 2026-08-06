@@ -13,7 +13,7 @@ import { drawReward, pickRewardChoice } from './rewards.js';
 import { drawTitle } from './scenes.js'; // drawComplete retired: both outcomes now land on scene_continued.js (GDD §9.5)
 import { drawStandSelect, pickStand } from './standselect.js';
 import {
-  createFreshRunState, resolveNodeEntry, commitNode, onCombatWin, finishRunLoss,
+  createFreshRunState, resolveNodeEntry, commitNode, onCombatWin, onCombatFled, finishRunLoss,
   persistRun
 } from './run_flow.js';
 import {
@@ -189,6 +189,7 @@ export default {
            Mission and advances no Bond, because it cost nothing. */
         if (state.trainingCombat) { state.combat = null; state.trainingCombat = false; state.scene = 'training'; }
         else if (state.combat.outcome === 'win') onCombatWin(state, env);
+        else if (state.combat.outcome === 'fled') onCombatFled(state, env);
         else finishRunLoss(state, env);
       } else if (state.scene === 'reward') {
         const idx = pickRewardChoice(mx, my, state.currentOffer, W);
@@ -232,7 +233,7 @@ export default {
         } else if (!c._announced) {
           c._announced = true;
           musicSetIntensity(0);
-          if (c.outcome === 'win') sfxVictory(); else sfxDefeat();
+          if (c.outcome === 'win') sfxVictory(); else if (c.outcome !== 'fled') sfxDefeat();
         }
         const activeNode = state.runState && state.runState.graph.nodes[state.enteringNodeId];
         drawCombat(g, W, H, c, tsec, dt, activeNode && activeNode.scene);

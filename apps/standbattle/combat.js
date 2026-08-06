@@ -195,6 +195,11 @@ export function createCombat(enemyOrEncounterDef, ownedFragments, opts, rng) {
   combat.setKey = (code, down) => {
     const was = keys[code];
     keys[code] = down;
+    // GDD §4.7/§15: fleeing forfeits the reward, so it only exists where the encounter def opts in (Survive/the Stalker).
+    if (down && !was && code === 'flee' && combat.outcome === 'fighting' && combat.encounter.def.fleeable) {
+      combat.outcome = 'fled';
+      return;
+    }
     if (down && !was && ACTION_KEYS.has(code)) {
       if (player.state === 'idle') performAction(combat, code);
       else player.bufferedAction = { kind: code, timer: INPUT_BUFFER_FRAMES };
