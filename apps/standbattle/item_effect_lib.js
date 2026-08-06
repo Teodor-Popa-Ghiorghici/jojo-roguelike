@@ -99,7 +99,15 @@ export const ITEM_EFFECT_LIB = {
      "the tether becomes a live wire" (Charge) share this one verb. */
   applyStatusToNearby(ctx, data) {
     if (!ctx.combat) return;
-    const src = data.from === 'target' ? ctx.target : (ctx.entity || ctx.attacker);
+    /* `data.from: 'target'` means "centered on whichever enemy this hit
+       named" -- but that enemy is ctx.target on onKill (combat_player.js)
+       and ctx.defender everywhere else (onHitLanded/onHitResolve,
+       resolvers.js/combat_player.js never set ctx.target on those hooks).
+       Reading ctx.target unconditionally silently no-op'd every non-onKill
+       use of this option (caught during Duo Fragment authoring) -- fixed
+       here, not per call site, since every existing Fragment/Relic/Disc
+       that named `from: 'target'` gets the fix for free. */
+    const src = data.from === 'target' ? (ctx.target || ctx.defender) : (ctx.entity || ctx.attacker);
     if (!src) return;
     nearestEnemies(ctx.combat, src.x, src.z, data.count, data.radius).forEach(e => applyStatus(e, data.status, data.stacks));
   },
@@ -111,7 +119,8 @@ export const ITEM_EFFECT_LIB = {
      every Fragment using this pairs it with a real apply/consume clause. */
   damageNearby(ctx, data) {
     if (!ctx.combat) return;
-    const src = data.from === 'target' ? ctx.target : (ctx.entity || ctx.attacker);
+    // See applyStatusToNearby's comment: ctx.target only exists on onKill.
+    const src = data.from === 'target' ? (ctx.target || ctx.defender) : (ctx.entity || ctx.attacker);
     if (!src) return;
     nearestEnemies(ctx.combat, src.x, src.z, data.count, data.radius).forEach(e => applyDamage(e, data.amount || 0));
   },
