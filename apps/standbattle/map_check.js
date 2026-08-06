@@ -14,7 +14,7 @@
 import { createRng } from './rng.js';
 import { generateAct1Map } from './map_gen.js';
 import { checkAll } from './map_constraints.js';
-import { ACT1_CONSTRAINTS } from './map_data.js';
+import { ACT_CONFIGS } from './map_data.js';
 import { createRunFragmentState, generateOffer, skipOfferForPity, PITY_THRESHOLD } from './fragment_offers.js';
 import { decideCombatRewardKind } from './economy.js';
 
@@ -64,7 +64,7 @@ export function runMapChecks(n = 500) {
     const graph = generateAct1Map(rng.stream('map'));
     attempts.push(graph.attempts);
     if (graph.repaired) repairedCount++;
-    if (!checkAll(graph, ACT1_CONSTRAINTS).pass) constraintFailures++;
+    if (!checkAll(graph, ACT_CONFIGS[1].constraints).pass) constraintFailures++;
     graph.paths.forEach(p => {
       if (!p.some(id => graph.nodes[id].type === 'rest')) noRestPath++;
       if (!p.some(id => graph.nodes[id].type === 'shop')) noShopPath++;

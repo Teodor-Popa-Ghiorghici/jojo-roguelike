@@ -72,48 +72,11 @@ export const MODIFIERS = {
   aggressive: { label: '(AGGRESSIVE)', hpMult: 1, speedMult: 1.35, tint: PAL.lred }
 };
 
-/* Boss — one bespoke signature move (sheer_heart_attack) layered on the
-   shared pattern library, phase transition tied to an explicit cue per §9.
-
-   Phase 6 (GDD §4.6): 3 phases, each testing something different.
-   Phase 1 is pattern reading (the existing sweep/slam/projectile trio).
-   Phase 2 debuts the one bespoke signature AND a rule (ai.js's `hazard`
-   field on sheer_heart_attack, resolved generically by hazards.js).
-   Phase 3 exposes Kira himself (boss_parts.js's `parts`) -- the design
-   payoff, a positioning puzzle on the belt plane's existing depth axis,
-   not a fourth attack pattern. Each phase entry owns its own
-   `transitionLine` (combat_enemy.js) so the two separate transitions read
-   as two distinct in-character beats instead of sharing one string. */
-export const BOSS_KILLER_QUEEN = {
-  id: 'killer_queen', character: 'Yoshikage Kira', standName: 'Killer Queen',
-  source: 'Diamond is Unbreakable (Part 4)',
-  hp: 200, power: 9, speedPx: 140, precision: 8, poise: 70,
-  phases: [
-    { hpAbove: 0.66, attackPatterns: ['sweep', 'telegraphed_slam', 'projectile'] },
-    {
-      hpAbove: 0.33, attackPatterns: ['sweep', 'telegraphed_slam', 'projectile', 'sheer_heart_attack'],
-      transitionLine: 'KIRA: "I JUST WANT TO LIVE QUIETLY."'
-    },
-    {
-      hpAbove: 0, attackPatterns: ['sweep', 'telegraphed_slam', 'projectile', 'sheer_heart_attack'],
-      transitionLine: 'KIRA: "...THEN I\'LL FINISH THIS MYSELF."'
-    }
-  ],
-  /* GDD §18B deliverable 4: fixed HP fraction, independent of the phase
-     boundaries above, so it lands as its own beat (mid-Phase-2 here)
-     rather than doubling up with a phase-transition banner. Sheer Heart
-     Attack's canon "Defend Mode" (curls into an invulnerable steel ball)
-     is the in-fiction hook for "clears own statuses, 6s immunity". */
-  purgeAtHpFrac: 0.5,
-  purgeLine: 'KILLER QUEEN: SHEER HEART ATTACK -- DEFEND MODE',
-  /* Deliverable 2's exposed User: Kira himself, a small hurtbox hiding
-     directly behind Killer Queen on the depth axis (dz, world units) --
-     reachable only by a player who repositions in z, not by trading blows
-     at the resting depth. Same shared HP pool as the Stand, at x3. */
-  parts: [
-    { id: 'kira', label: 'KIRA', revealAtPhase: 2, dx: 0, dz: 56, w: 14, h: 30, dmgMult: 3 }
-  ]
-};
+/* Boss definitions moved to data_bosses.js (Phase 9d, roster headed to
+   10) -- re-exported here so every existing `import { BOSS_KILLER_QUEEN }
+   from './data.js'` call site is untouched, the same precedent moves.js/
+   data_enemies.js's re-exports above already set. */
+export { BOSS_KILLER_QUEEN, BOSSES } from './data_bosses.js';
 
 /* RUN_BUFFS (the prototype's placeholder "taste of Build Diversity" --
    three bespoke flat multipliers) is retired as of Phase 7: fragments.js's

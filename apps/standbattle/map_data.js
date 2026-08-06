@@ -1,6 +1,9 @@
-/* Act I map layout — Phase 8 deliverable 1. "Act layouts are data": every
-   knob map_gen.js reads lives here, so a future Act II-IV layout is a new
-   entry in this file, never a new generator. */
+/* Act map layout data — Phase 8 (Act I) + Phase 9d (generalized to N Acts).
+   "Act layouts are data": every knob map_gen.js reads lives here, keyed by
+   act number in ACT_CONFIGS, so a new Act is a new table entry, never a
+   new generator. Topology knobs (lanes/path-count/lean identities) are
+   shared across every Act -- the GDD gives no reason to vary them -- only
+   row-count range, fairness constraints, and content pools vary per Act. */
 
 import { atLeastOnePerPath, noAdjacent, maxRun } from './map_constraints.js';
 
@@ -9,21 +12,17 @@ export const MAX_ATTEMPTS = 40; // §1's resample-loop budget before the determi
 
 /* Interior node types only -- row 0 is always the fixed opener ('combat'),
    the last row is always the fixed boss ('boss'). Archive-locked types
-   (Rule Fight, Duel, Arrow Shrine, Gamble, Requiem Altar) are out of Act
-   I's pool entirely; Archive Node itself is in, stubbed at the scene
-   layer (archive_stub.js). */
+   (Rule Fight, Duel, Arrow Shrine, Gamble, Requiem Altar) stay out of the
+   generated pool entirely; Archive Node itself is in, stubbed at the
+   scene layer (archive_stub.js). */
 export const INTERIOR_TYPES = ['combat', 'elite', 'event', 'rest', 'shop', 'treasure', 'archive'];
 
 /* Rest/Shop deliberately do NOT vary by lean (see LEAN_MULT below) and
    carry a generous flat weight -- they're the two types the fairness
    constraints require on every single path, and leaving their density
-   to lean-driven suppression (an earlier version of this table did)
-   pushed the resample loop's first-attempt pass rate down under 5%,
-   forcing the generator to lean on the deterministic repair floor most
-   of the time instead of only rarely. "Hard road, better rewards" reads
-   through combat/elite/treasure density instead, which is both truer to
-   the GDD (harder fights and richer loot, not fewer checkpoints) and
-   keeps resampling cheap. */
+   to lean-driven suppression pushed the resample loop's first-attempt
+   pass rate down under 5%. "Hard road, better rewards" reads through
+   combat/elite/treasure density instead. */
 const BASE_WEIGHT = { combat: 18, elite: 8, event: 14, rest: 26, shop: 22, treasure: 9, archive: 5 };
 
 /* Path identity (§5.2): each generated path is pre-assigned one of these
@@ -55,17 +54,10 @@ export function weightOf(type, lean) {
   return BASE_WEIGHT[type] * ((LEAN_MULT[lean] && LEAN_MULT[lean][type]) || 1);
 }
 
-/* Rows: fixed opener + fixed boss + 7-9 generated interior rows. */
-export const ROWS_MIN = 9;
-export const ROWS_MAX = 11;
 export const PATH_COUNT_MIN = 2;
 export const PATH_COUNT_MAX = 4;
 
-/* Fairness (GDD §5.2/§6.8), generation-time, not runtime hope --
-   deliverable 4. `exactlyOnce('requiem_altar')` exists in
-   map_constraints.js for Act III later; Act I's own list never includes
-   it since the type isn't even in INTERIOR_TYPES above. */
-export const ACT1_CONSTRAINTS = [
+const ACT1_CONSTRAINTS = [
   atLeastOnePerPath('rest'),
   atLeastOnePerPath('shop'),
   noAdjacent('rest'),
@@ -73,15 +65,55 @@ export const ACT1_CONSTRAINTS = [
 ];
 
 /* Combat/Elite/Event content pools -- which data.js entries a generated
-   node of that type may draw from. Kept here (not in data.js) so the
-   generator's content selection is next to the layout knobs it's paired
-   with. */
-export const COMBAT_POOL = [
+   node of that type may draw from. */
+const ACT1_COMBAT_POOL = [
   { enemy: 'morioh_thug' },
   { enemy: 'knife_thug' },
   { encounter: 'morioh_alley_scuffle' },
   { encounter: 'morioh_shopping_street' },
   { encounter: 'kameyu_loading_dock' }
 ];
-export const ELITE_POOL = [{ encounter: 'budogaoka_park_elite' }];
-export const EVENT_POOL = ['stray_cat', 'vending_machine', 'rokakaka_stand'];
+const ACT1_ELITE_POOL = [{ encounter: 'budogaoka_park_elite' }];
+const ACT1_EVENT_POOL = ['stray_cat', 'vending_machine', 'rokakaka_stand'];
+
+/* GDD §5.1 act table: rows 9/10/10/11, ~7/~8/~8/~9 encounters. Bosses per
+   Act (§4.6/§9): row 0 opener + the fixed final-row boss are the only
+   hardcoded content per Act; everything interior is weighted-random over
+   that Act's own pool. Acts II-IV's pools/scenes are filled in by their
+   own authoring batches (Phase 9d); until then they intentionally reuse
+   Act I's roster/scene as inert filler so the generalized generator is
+   provably correct end-to-end before any new content lands. */
+export const ACT_CONFIGS = {
+  1: {
+    rowsMin: 9, rowsMax: 11,
+    constraints: ACT1_CONSTRAINTS,
+    combatPool: ACT1_COMBAT_POOL, elitePool: ACT1_ELITE_POOL, eventPool: ACT1_EVENT_POOL,
+    rowZero: { enemy: 'morioh_thug', label: 'BACK ALLEY' },
+    boss: { id: 'killer_queen', label: 'KAMEYU DEPARTMENT STORE' },
+    scenes: { combat: 'street', elite: 'street', event: 'alley', rest: 'park', shop: 'park', treasure: 'park', archive: 'store', boss: 'store' }
+  },
+  2: {
+    rowsMin: 10, rowsMax: 11,
+    constraints: ACT1_CONSTRAINTS,
+    combatPool: ACT1_COMBAT_POOL, elitePool: ACT1_ELITE_POOL, eventPool: ACT1_EVENT_POOL,
+    rowZero: { enemy: 'morioh_thug', label: 'STREET' },
+    boss: { id: 'killer_queen', label: 'PLACEHOLDER' },
+    scenes: { combat: 'street', elite: 'street', event: 'alley', rest: 'park', shop: 'park', treasure: 'park', archive: 'store', boss: 'store' }
+  },
+  3: {
+    rowsMin: 10, rowsMax: 11,
+    constraints: ACT1_CONSTRAINTS,
+    combatPool: ACT1_COMBAT_POOL, elitePool: ACT1_ELITE_POOL, eventPool: ACT1_EVENT_POOL,
+    rowZero: { enemy: 'morioh_thug', label: 'STREET' },
+    boss: { id: 'killer_queen', label: 'PLACEHOLDER' },
+    scenes: { combat: 'street', elite: 'street', event: 'alley', rest: 'park', shop: 'park', treasure: 'park', archive: 'store', boss: 'store' }
+  },
+  4: {
+    rowsMin: 11, rowsMax: 13,
+    constraints: ACT1_CONSTRAINTS,
+    combatPool: ACT1_COMBAT_POOL, elitePool: ACT1_ELITE_POOL, eventPool: ACT1_EVENT_POOL,
+    rowZero: { enemy: 'morioh_thug', label: 'STREET' },
+    boss: { id: 'killer_queen', label: 'PLACEHOLDER' },
+    scenes: { combat: 'street', elite: 'street', event: 'alley', rest: 'park', shop: 'park', treasure: 'park', archive: 'store', boss: 'store' }
+  }
+};

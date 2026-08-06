@@ -45,7 +45,7 @@ const TOKEN_RANGED_COUNT = 1; // GDD §16 -- a separate, smaller pool; unused by
 
 export function createCombat(enemyOrEncounterDef, ownedFragments, opts, rng) {
   opts = opts || {};
-  const standDef = STANDS.star_platinum;
+  const standDef = STANDS[opts.standId] || STANDS.star_platinum;
 
   /* Effect/query/content pipeline (tech §2.1/§2.2/§2.9, Phase 3) is built
      BEFORE any fighter, because a Fragment's getMaxPersistence query must

@@ -27,9 +27,6 @@ import { zToYOffset, depthSort, cameraTargetX } from './render_adapter.js';
 export { WORLD_W, GROUND_Y };
 
 const ENEMY_ART = { morioh_thug: drawThug, angelo: drawAngelo };
-const SCENE_FOR = {
-  n1: 'alley', n2: 'street', n3: 'street', n4: 'street', n5: 'park', n6: 'store'
-};
 
 /* each arena's key light, used for the rim on every sprite so characters
    are lit by the scene they are standing in */
@@ -157,7 +154,7 @@ function drawFighter(g, f, pose, camX, tsec, isPlayer, phaseIndex, rim) {
 
 /* ---- entry point ------------------------------------------------------- */
 
-export function drawCombat(g, W, H, combat, tsec, dtMs, nodeId) {
+export function drawCombat(g, W, H, combat, tsec, dtMs, sceneId) {
   if (!combat._fx) {
     combat._fx = createFx();
     wireFx(combat, combat._fx, GROUND_Y);
@@ -178,7 +175,7 @@ export function drawCombat(g, W, H, combat, tsec, dtMs, nodeId) {
     if (e.hp > 0 || (e.deathTimer || 0) > 0) enemyPoses.set(e, enemyPose(e, tsec, dt));
   });
 
-  const scene = SCENE_FOR[nodeId] || 'street';
+  const scene = sceneId || 'street';
   const rim = SCENE_LIGHT[scene];
   if (!frozen) sceneEvents(combat, fx, ppose, camX, tsec);
 
