@@ -45,10 +45,11 @@ export const HERMIT_PURPLE_FRAGMENTS = [
     levelDesc: [
       'Heavy hits also apply Mark to 1 enemy near you.',
       'Heavy hits also apply Mark to 2 enemies near you.',
-      'Heavy hits also apply Mark to 3 enemies near you.'
+      'Heavy hits also apply Mark to 3 enemies near you, and Heavy itself now consumes the target\'s own Mark for bonus damage first -- read it, then strike it.'
     ],
     effects: [
-      { hook: 'onHitLanded', fn: 'applyStatusToNearby', data: { status: 'mark', stacks: 1, count: [1, 2, 3], radius: 60 } }
+      { hook: 'onHitLanded', fn: 'applyStatusToNearby', data: { status: 'mark', stacks: 1, count: [1, 2, 3], radius: 60 } },
+      { hook: 'onHitResolve', fn: 'consumeStatusForBonus', minLevel: 3, data: { status: 'mark', dmgPerStack: 8 } }
     ]
   },
   {

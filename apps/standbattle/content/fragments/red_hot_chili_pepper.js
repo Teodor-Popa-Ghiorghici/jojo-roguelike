@@ -39,10 +39,11 @@ export const RED_HOT_CHILI_PEPPER_FRAGMENTS = [
     levelDesc: [
       'Medium consumes the target\'s Charge for +3 damage and +1 Persistence per stack.',
       'Medium consumes the target\'s Charge for +5 damage and +2 Persistence per stack.',
-      'Medium consumes the target\'s Charge for +8 damage and +3 Persistence per stack.'
+      'Medium consumes the target\'s Charge for +8 damage and +3 Persistence per stack, then immediately re-Charges it with 1 fresh stack -- the circuit never fully discharges.'
     ],
     effects: [
-      { hook: 'onHitResolve', fn: 'consumeStatusForBonus', data: { status: 'charge', dmgPerStack: [3, 5, 8], persistencePerStack: [1, 2, 3] } }
+      { hook: 'onHitResolve', fn: 'consumeStatusForBonus', data: { status: 'charge', dmgPerStack: [3, 5, 8], persistencePerStack: [1, 2, 3] } },
+      { hook: 'onHitLanded', fn: 'chainedApplyStatus', minLevel: 3, data: { slot: 'medium', status: 'charge', stacks: 1 } }
     ]
   },
   {
@@ -51,10 +52,11 @@ export const RED_HOT_CHILI_PEPPER_FRAGMENTS = [
     levelDesc: [
       'Each hit of Special 1 applies 1 Charge. Hits against a Charged target deal +15% damage.',
       'Each hit of Special 1 applies 1 Charge. Hits against a Charged target deal +25% damage.',
-      'Each hit of Special 1 applies 2 Charge. Hits against a Charged target deal +40% damage.'
+      'Each hit of Special 1 applies 2 Charge. Hits against a Charged target deal +40% damage and grant 3 Persistence -- the barrage starts paying you back.'
     ],
     effects: [
-      { hook: 'onHitLanded', fn: 'chainedApplyStatus', data: { slot: 'special_1', status: 'charge', stacks: [1, 1, 2] } }
+      { hook: 'onHitLanded', fn: 'chainedApplyStatus', data: { slot: 'special_1', status: 'charge', stacks: [1, 1, 2] } },
+      { hook: 'onHitLanded', fn: 'grantResourceIfDefenderStatus', minLevel: 3, data: { status: 'charge', resource: 'persistence', amount: 3 } }
     ],
     queries: [
       { hook: 'getDamage', fn: 'bonusIfDefenderStatus', data: { status: 'charge', minStacks: 1, mult: [1.15, 1.25, 1.4] } }

@@ -111,11 +111,12 @@ export const ECHOES_ACT3_FRAGMENTS = [
     levelDesc: [
       'When an enemy dies, the crowd around it collapses inward: the 2 nearest survivors are grounded with Gravity and take 5 damage.',
       'The 3 nearest survivors are grounded with Gravity and take 9 damage.',
-      'The 4 nearest survivors are grounded with Gravity and take 14 damage.'
+      'The 4 nearest survivors are grounded with Gravity and take 14 damage, and the kill itself grants 8 Momentum -- the collapse feeds back into you.'
     ],
     effects: [
       { hook: 'onKill', fn: 'applyStatusToNearby', data: { status: 'gravity', count: [2, 3, 4], radius: 90, from: 'target' } },
-      { hook: 'onKill', fn: 'damageNearby', data: { amount: [5, 9, 14], count: [2, 3, 4], radius: 90, from: 'target' } }
+      { hook: 'onKill', fn: 'damageNearby', data: { amount: [5, 9, 14], count: [2, 3, 4], radius: 90, from: 'target' } },
+      { hook: 'onKill', fn: 'grantResource', minLevel: 3, data: { resource: 'momentum', amount: 8 } }
     ]
   }
 ];

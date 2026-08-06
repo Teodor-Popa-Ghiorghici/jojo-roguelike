@@ -40,10 +40,11 @@ export const GOLD_EXPERIENCE_FRAGMENTS = [
     levelDesc: [
       'Each Stand Rush hit heals you for 10% of the damage dealt.',
       'Each Stand Rush hit heals you for 18% of the damage dealt.',
-      'Each Stand Rush hit heals you for 28% of the damage dealt.'
+      'Each Stand Rush hit heals you for 28% of the damage dealt, and also grants 3 Momentum -- vitality feeding back into motion.'
     ],
     effects: [
-      { hook: 'onHitResolve', fn: 'healPctOfDamage', data: { pct: [0.1, 0.18, 0.28] } }
+      { hook: 'onHitResolve', fn: 'healPctOfDamage', data: { pct: [0.1, 0.18, 0.28] } },
+      { hook: 'onHitLanded', fn: 'grantResource', minLevel: 3, data: { slot: 'rush', resource: 'momentum', amount: 3 } }
     ]
   },
   {

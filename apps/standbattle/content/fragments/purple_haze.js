@@ -25,10 +25,11 @@ export const PURPLE_HAZE_FRAGMENTS = [
     levelDesc: [
       'Medium consumes the target\'s Virus for +3 damage and +1 Persistence per stack.',
       'Medium consumes the target\'s Virus for +5 damage and +2 Persistence per stack.',
-      'Medium consumes the target\'s Virus for +8 damage and +3 Persistence per stack.'
+      'Medium consumes the target\'s Virus for +8 damage and +3 Persistence per stack, then immediately re-infects it with 1 fresh stack -- the strike burns the infection down and reseeds it in one motion.'
     ],
     effects: [
-      { hook: 'onHitResolve', fn: 'consumeVirusForBonus', data: { dmgPerStack: [3, 5, 8], persistencePerStack: [1, 2, 3] } }
+      { hook: 'onHitResolve', fn: 'consumeVirusForBonus', data: { dmgPerStack: [3, 5, 8], persistencePerStack: [1, 2, 3] } },
+      { hook: 'onHitLanded', fn: 'chainedApplyStatus', minLevel: 3, data: { slot: 'medium', status: 'virus', stacks: 1 } }
     ]
   },
   {
@@ -51,13 +52,14 @@ export const PURPLE_HAZE_FRAGMENTS = [
     levelDesc: [
       'Enemies dying with 5+ Virus explode into a spreading cloud (radius 36).',
       'Enemies dying with 5+ Virus explode into a spreading cloud (radius 44, more damage per tick).',
-      'Enemies dying with 5+ Virus explode into a spreading cloud (radius 52, more damage per tick).'
+      'Enemies dying with 5+ Virus explode into a spreading cloud (radius 52, more damage per tick), and triggering one refunds 8 Persistence -- the bloom feeds you back, not just the arena.'
     ],
     effects: [
       {
         hook: 'onKill', fn: 'spawnDeathCloudIfVirused',
         data: { minStacks: 5, radius: [36, 44, 52], tickFrames: 20, dmg: [3, 4, 5], lifeFrames: 120, selfDamage: 4 }
-      }
+      },
+      { hook: 'onKill', fn: 'grantResource', minLevel: 3, data: { resource: 'persistence', amount: 8 } }
     ]
   }
 ];

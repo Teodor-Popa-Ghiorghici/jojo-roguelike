@@ -40,11 +40,12 @@ export const STICKY_FINGERS_FRAGMENTS = [
     tradeoff: 'Only active while Straining the tether -- which already costs Persistence per second and drags you toward your Stand.',
     levelDesc: [
       'While Straining the tether, the nearest enemy is marked Broken every frame.',
-      'While Straining the tether, the nearest enemy is marked Broken every frame.',
-      'While Straining the tether, the nearest 2 enemies are marked Broken every frame.'
+      'While Straining the tether, the nearest enemy is marked Broken every frame, and every Step now refunds 6 Persistence -- the wire teaches your whole kit to spend less.',
+      'While Straining the tether, the nearest 2 enemies are marked Broken every frame, and every Step still refunds 6 Persistence.'
     ],
     effects: [
-      { hook: 'onTetherStrain', fn: 'markNearestBroken', data: { count: [1, 1, 2] } }
+      { hook: 'onTetherStrain', fn: 'markNearestBroken', data: { count: [1, 1, 2] } },
+      { hook: 'onStepStart', fn: 'grantResource', minLevel: 2, data: { resource: 'persistence', amount: 6 } }
     ]
   },
   {

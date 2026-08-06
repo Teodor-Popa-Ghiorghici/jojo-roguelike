@@ -16,14 +16,15 @@ export const THE_WORLD_FRAGMENTS = [
   },
   {
     id: 'frag_the_world_clash', donor: 'the_world', slot: 'clash',
-    name: 'Time, Stop!', rarity: 'epic', tags: ['time'],
+    name: 'Time, Stop!', rarity: 'epic', tags: ['time', 'economy'],
     levelDesc: [
       'A Perfect Clash stops time completely for 0.67s.',
       'A Perfect Clash stops time completely for 0.93s.',
-      'A Perfect Clash stops time completely for 1.2s.'
+      'A Perfect Clash stops time completely for 1.2s, and also grants 10 Persistence -- your Stand keeps working while nothing else does.'
     ],
     effects: [
-      { hook: 'onPerfectClash', fn: 'triggerTimeStop', data: { frames: [40, 56, 72] } }
+      { hook: 'onPerfectClash', fn: 'triggerTimeStop', data: { frames: [40, 56, 72] } },
+      { hook: 'onPerfectClash', fn: 'grantResource', minLevel: 3, data: { resource: 'persistence', amount: 10 } }
     ]
   },
   {
@@ -42,14 +43,15 @@ export const THE_WORLD_FRAGMENTS = [
   },
   {
     id: 'frag_the_world_rush', donor: 'the_world', slot: 'rush',
-    name: 'Stopped World', rarity: 'legendary', tags: ['time'],
+    name: 'Stopped World', rarity: 'legendary', tags: ['time', 'economy'],
     levelDesc: [
       'Using Stand Rush stops time for its opening beat (0.5s).',
       'Using Stand Rush stops time for its opening beat (0.75s).',
-      'Using Stand Rush stops time for its opening beat (1.0s).'
+      'Using Stand Rush stops time for its opening beat (1.0s), and every Rush hit that lands during the stopped world refunds 10 Persistence -- the world isn\'t just still, it\'s yours to spend.'
     ],
     effects: [
-      { hook: 'onMoveStart', fn: 'triggerTimeStop', data: { moveId: 'sp_ora_rush', frames: [30, 45, 60] } }
+      { hook: 'onMoveStart', fn: 'triggerTimeStop', data: { moveId: 'sp_ora_rush', frames: [30, 45, 60] } },
+      { hook: 'onHitLanded', fn: 'grantResource', minLevel: 3, data: { slot: 'rush', resource: 'persistence', amount: 10 } }
     ]
   }
 ];
