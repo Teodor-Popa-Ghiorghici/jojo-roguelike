@@ -44,9 +44,16 @@ export default {
   resizable: true,
 
   async mount(root, ctx) {
+    this._closed = false;
     const saveStore = createSaveStore(ctx);
     const meta = ensureMetaProgress(await saveStore.loadMeta());
     const savedRun = await saveStore.loadRun();
+    /* unmount() can fire while these awaits are still pending -- wm.js
+       calls mount() without awaiting it, and a close click resolves
+       synchronously in the same tick. Bail before touching the DOM/rAF/
+       audio so a fast open-then-close never leaves an orphaned frame
+       loop or music engine running after the window is gone. */
+    if (this._closed) return;
 
     const state = {
       scene: 'title', runState: null, runRng: null, combat: null,
@@ -64,7 +71,12 @@ export default {
       flashEnabled: meta.flashEnabled !== false, reduceParticles: !!meta.reduceParticles
     };
 
-    if (savedRun && savedRun.graph && savedRun.graph.nodes[savedRun.nodeId]) {
+    /* map.js reads graph.nodes/edges/paths unconditionally -- a save whose
+       graph is missing any of those (e.g. hand-edited, or truncated by a
+       storage failure mid-write) must fall through to a fresh run here,
+       not crash drawMap on the first frame it's resumed into. */
+    if (savedRun && savedRun.graph && Array.isArray(savedRun.graph.edges) && Array.isArray(savedRun.graph.paths)
+      && savedRun.graph.nodes[savedRun.nodeId]) {
       /* Resuming mid-run loses at most the node in progress -- combat
          state itself is never persisted, only the map-scene checkpoint. */
       state.runState = savedRun;
@@ -158,7 +170,7 @@ export default {
        rebinding, and the Daily/Weekly challenge launchers + leaderboard,
        all split into settings_panel.js so this file stays the thin mount
        shell. */
-    mountAccessibilityBar(bar, pane, {
+    const accessibilityBar = mountAccessibilityBar(bar, pane, {
       meta, saveStore, env, input, state, ctx,
       onLaunchDaily: () => { if (isHubScene(state.scene)) { launchChallenge(dailySeedId()); if (window.Snd) window.Snd.select(); } },
       onLaunchWeekly: () => { if (isHubScene(state.scene)) { launchChallenge(weeklySeedId()); if (window.Snd) window.Snd.select(); } }
@@ -276,8 +288,12 @@ export default {
     musicStart();
     musicSetIntensity(0);
 
-    this._cleanup = () => { cancelAnimationFrame(raf); ro.disconnect(); musicStop(); };
+    this._cleanup = () => { cancelAnimationFrame(raf); ro.disconnect(); musicStop(); accessibilityBar.destroy(); };
+    if (this._closed) { this._cleanup(); this._cleanup = null; }
   },
 
-  unmount() { if (this._cleanup) this._cleanup(); }
+  unmount() {
+    this._closed = true;
+    if (this._cleanup) { this._cleanup(); this._cleanup = null; }
+  }
 };

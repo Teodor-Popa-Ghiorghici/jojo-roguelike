@@ -52,5 +52,8 @@ export async function appendRunSummary(ctx, { seed, stand, actReached, killer, c
   };
   let existing = '';
   try { existing = (await ctx.fs.read(TELEMETRY_PATH)) || ''; } catch (e) { existing = ''; }
-  await ctx.fs.write(TELEMETRY_PATH, existing + JSON.stringify(summary) + '\n');
+  /* Telemetry is best-effort local logging, never load-bearing for a run
+     or for meta -- a quota-exceeded write must not throw into finishRun's
+     caller (run_flow_combat_end.js calls this unawaited). */
+  try { await ctx.fs.write(TELEMETRY_PATH, existing + JSON.stringify(summary) + '\n'); } catch (e) {}
 }

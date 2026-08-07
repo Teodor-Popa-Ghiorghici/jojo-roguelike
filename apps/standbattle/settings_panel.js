@@ -69,7 +69,7 @@ function buildRebindPanel(pane, input, meta, saveStore) {
       panel.appendChild(row);
     });
   }
-  document.addEventListener('keydown', ev => {
+  function onKeydown(ev) {
     if (!waiting || panel.style.display === 'none') return;
     ev.preventDefault(); ev.stopPropagation();
     input.rebind(ev.code, waiting);
@@ -77,9 +77,11 @@ function buildRebindPanel(pane, input, meta, saveStore) {
     saveStore.saveMeta(meta);
     waiting = null;
     render();
-  }, true);
+  }
+  document.addEventListener('keydown', onKeydown, true);
   return {
-    open() { render(); panel.style.display = 'block'; }
+    open() { render(); panel.style.display = 'block'; },
+    destroy() { document.removeEventListener('keydown', onKeydown, true); }
   };
 }
 
@@ -152,4 +154,6 @@ export function mountAccessibilityBar(bar, pane, { meta, saveStore, env, input, 
   const leaderboard = buildLeaderboardPanel(pane, ctx);
   const boardBtn = btn(bar, 'LEADERBOARD');
   boardBtn.addEventListener('mousedown', ev => { ev.stopPropagation(); leaderboard.open(); if (window.Snd) window.Snd.click(); });
+
+  return { destroy() { rebind.destroy(); } };
 }
