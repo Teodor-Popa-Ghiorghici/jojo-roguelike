@@ -1071,6 +1071,589 @@ system — not invented per the mission's instruction.
 
 ---
 
+### QA-033 — S2 — five shipped content clauses are silently inert: a
+### `ctx.combat`-reading verb attached to a hook whose ctx has no `combat`
+
+**Systems collided:** content-validation × effect-pipeline.
+
+**Repro:** `node apps/standbattle/scripts/qa_systems_collision.js
+--case=c8d --verbose` (static scan over the shipped registry, seed
+`c13f-unit`), plus the runtime confirmation `--case=c5e` (seed
+`c13f-barrier-loop`, **frame 118**): Hierophant Green + `hg_barrier`,
+Guard held and nothing else, player parked 50px from three enemies —
+well inside the Aspect's 130px radius — breaks guard 44 times in 3600
+frames and freezes **0 of 3** enemies. Replays:
+`docs/qa/replays/c5e-guard-break-loop-vs-a-dead-aspect-clause.json`.
+
+**Symptom:** `item_effect_lib.js:101` (`applyStatusToNearby`),
+`:122` (`damageNearby`) and `effect_lib.js`'s `triggerTimeStop` all open
+with `if (!ctx.combat) return;`. Eight effect hooks build their ctx
+without a `combat` field — `onGuardBreak` (`combat_player.js:276`,
+`combat_defense.js:98`), `onStaggerStart` (`combat_defense.js:74`,
+`combat_enemy.js:74`), `onDamageTaken` (`combat_defense.js:139`,
+`hazards.js:59`), `onDamageIncoming` (`combat_defense.js:128`),
+`onProjectStart`/`onProjectEnd` (`stand_classes.js:56`, `:72`),
+`onCritCheck` (`resolvers.js:129`) and `onFeedbackDamage`
+(`combat_stand.js:123-127`) — while `onMoveStart`/`onHitLanded`/`onKill`/
+`onStepStart`/`onClashSuccess`/`onHitResolve`/`onTetherStrain`/
+`onCombatTick` all carry it. Five shipped clauses land on the wrong side
+of that line and do nothing at all:
+
+| entry | clause |
+|---|---|
+| fragment `frag_moody_blues_special_2` | `onStaggerStart -> triggerTimeStop` |
+| fragment `frag_moody_blues_special_2` | `onGuardBreak -> triggerTimeStop` |
+| aspect `hg_web` | `onProjectStart -> applyStatusToNearby` |
+| aspect `hg_barrier` | `onGuardBreak -> applyStatusToNearby` |
+| aspect `kq_bites_the_dust` | `onDamageIncoming -> triggerTimeStop` |
+
+`frag_moody_blues_special_2` has only those two effects, so the whole
+Fragment is inert: picking it costs the player a reward slot for nothing.
+`hg_barrier`'s card text ("Breaking a guard Freezes everything around it
+and returns a Step charge") is half false — the Step-charge clause
+(`refundStepCharge`) reads no combat and does fire.
+
+This is exactly the mission's item 8: **each entry is individually legal
+and `npm run validate` reports 0 errors.** `validateEffectsAndQueries`
+(`content_registry.js:69-78`) checks that the verb exists and that any
+status it names exists; nothing anywhere checks that the hook can satisfy
+the verb. The verb list is derived at runtime by the case, not hardcoded
+— `qa_collision_cases_c.js` introspects each `EFFECT_LIB`/
+`ITEM_EFFECT_LIB`/`ASPECT_EFFECT_LIB` entry's own source for a
+`ctx.combat` read — so it stays correct as verbs are added.
+
+**Frame:** 118 (seed `c13f-barrier-loop`); static for the scan.
+
+**Status:** logged, not fixed — **deliberately, and this is the entry
+13l should read first.** Adding `combat` to the five ctx literals is a
+one-line-each behaviour restoration and looks like the QA-008 case. It is
+not, because of what turning these on collides with: `hg_barrier`'s
+trigger fires ~once a second for free (QA-035) and the status it applies
+never expires or breaks (QA-034), so enabling the clause in isolation
+hands a held Guard key a permanent arena-wide freeze. **QA-033 must be
+fixed together with QA-034 and QA-035 or not at all** — fixing it alone
+takes a stable build to an unstable one, which is the failure mode this
+phase exists to prevent. The durable fix is a validator rule (hook→verb
+requirement table) so the class cannot recur, which is new validation
+surface, not a behaviour fix.
+
+---
+
+### QA-034 — S2 — Frozen never expires and never breaks, so its authored
+### `breaksOnHits: 3` is dead and its +25% damage-taken is permanent
+
+**Systems collided:** status × damage-resolution.
+
+**Repro:** `node apps/standbattle/scripts/qa_systems_collision.js
+--case=c2a` (seed `c13f-unit`): apply `frozen`, step `stepStatuses`
+**6000 frames** — still present. The control in the same case calls
+`registerStatusHit` three times by hand and the status is removed
+correctly, so the mechanism works and is simply never invoked.
+
+**Symptom:** `status.js:53` gives Frozen `durationFrames: NO_EXPIRY`
+(Infinity) on purpose — GDD §3.10 says it is "broken by hits, not a
+timer" — and delegates removal entirely to `registerStatusHit`
+(`status.js:184`). That function has **zero call sites outside
+`status.js`**: no landed-hit path (`combat_player.js`,
+`combat_defense.js`, `combat_stand.js`) calls it. Its own Phase 3 comment
+still reads "not called by any combat path yet", which was true when
+Frozen was data-only — but Frozen is now applied by a lot of shipped
+content (`aspects.js:117`, `content/discs.js:39`, and eight donor
+Fragments in `content/donors_meta_b.js`), and `resolvers.js:200` reads
+`STATUS_DEFS.frozen.damageTakenMult` unconditionally. So every Frozen
+application is a permanent, unremovable ×1.25 damage-taken mark rather
+than a three-hit window. `consumeStatusForBonus` content can still strip
+it deliberately; nothing strips it as a cost.
+
+**Frame:** 6000 (seed `c13f-unit`), i.e. it survives 100 sim-seconds.
+
+**Status:** logged, not fixed. Wiring `registerStatusHit` into the landed
+-hit paths decides *where* a hit is counted against a status across three
+files that currently share no such choke point — the same shared-kill
+-choke-point shape QA-021 asks for, and a real refactor rather than a
+one-file behaviour fix. See QA-033: this is one of the three that must
+land together.
+
+---
+
+### QA-035 — S2 — a held Guard re-breaks about once a second, so every
+### `onGuardBreak` clause is a free repeating trigger
+
+**Systems collided:** defense × resources (and defense × aspect).
+
+**Repro:** `node apps/standbattle/scripts/qa_systems_collision.js
+--case=c5c` — seed `c13f-gb0`, hold `guard` and nothing else: **28
+`onGuardBreak` fires in 1800 frames**, first at **frame 130**, all with
+`cause: 'persistence'`. Nothing is poked; the case's second arm (which
+pins Persistence at exactly 0) is reported separately so the natural
+result stands on its own. `--case=c5e` reproduces it in a crowd fight
+with a real Aspect equipped: **44 fires in 3600 frames**, first at
+**frame 118**. Replays: `c5c-guard-break-at-exactly-zero-persistence.json`,
+`c5e-guard-break-loop-vs-a-dead-aspect-clause.json`.
+
+**Symptom:** the cycle is `combat_player.js:274-277` → `guardBreakStagger`
+(`defense.js:99`, sets `state:'staggered'`) → stagger expires to `idle`
+(`combat_player.js:294`) → Persistence regenerates at 2/s while idle
+(`resources.js:52`) → Guard is still held, so the player re-enters guard
+with a few points → `stepGuardDrain` (`defense.js:89`) empties it again →
+break. No latch, no cooldown, no "you must release Guard first". The
+break itself is a punish that costs the player a stagger, so the loop is
+not free in a fight — but the *hook* is free, and any `onGuardBreak`
+content is therefore a ~1 Hz engine rather than a once-per-punish payoff.
+
+**Frame:** 130 (seed `c13f-gb0`); 118 (seed `c13f-barrier-loop`).
+
+**Status:** logged, not fixed. Whether a held Guard should re-break is a
+design question the GDD does not settle (the alternative — requiring a
+release before Guard re-arms — changes what holding Guard means), and any
+latch is a new state on the player. Flagged for 13l, and see QA-033: this
+is the collision that makes the QA-033 one-liner unsafe on its own.
+
+---
+
+### QA-036 — S2 — Crowded adds bodies to every Rule Fight's authored
+### roster, and the rule only ever binds `enemies[0]`
+
+**Systems collided:** menace × rule-fight.
+
+**Repro:** `node apps/standbattle/scripts/qa_systems_collision.js
+--group=7` — `--case=c7c` (seed `c13f-crowded-rf`) and `--case=c7d`
+(seed `c13f-crowded-all`), both at **frame 0**, i.e. at spawn:
+
+| encounter | authored | Crowded r3 |
+|---|---|---|
+| `budogaoka_sheer_heart_attack` | 1 | 4 |
+| `kameyu_illusos_mirror` | 1 | 4 |
+| `alley_formaggios_shrink` | 1 | 4 |
+| `shopping_street_baby_face` | 1 | 4 |
+| `loading_dock_yellow_temperance` | 1 | 4 |
+| `park_rolling_stones` | 1 | 4 |
+| `budogaoka_bites_the_dust` | 4 | 7 |
+| `alley_cheap_trick` | 1 | 4 |
+
+**8 of 8.** `encounter.js:77-78` appends `opts.extraEnemies` copies drawn
+from the wave's own `types` list to **every** wave; a Rule Fight declares
+its roster as `waves: [{ types: [...] }]` (`data_encounters.js:113-143`)
+with no fixed-count field for the spawner to respect, so a one-boss Rule
+Fight spawns four of that boss. Every `rf_*` handler then captures
+`combat.enemies[0]` once in `onStart` and holds it for the fight
+(`rule_fights.js:36`, `:69`, `:113`, `rule_fights_2.js:24`, `:126`), so
+the rule's special behaviour — Sheer Heart Attack's
+invulnerable-outside-the-hiding-spot clamp, Cheap Trick's Doom stacking,
+Baby Face's per-slot resistance — applies to exactly one of the four
+copies. The other three are ordinary bosses that the fight's stated rule
+does not govern.
+
+**Not run-ending:** `--case=c7e` runs all eight inflated Rule Fights to a
+terminal outcome with a z-aware bot and **all eight resolve inside 5400
+frames**, so this is graded S2, not S1.
+
+**Frame:** 0 (spawn) for the inflation; c7e covers 0-5400.
+
+**Status:** logged, not fixed. Two candidate fixes and both are design
+calls: exempt Rule Fights from `extraEnemies` (decides that Menace does
+not apply to them at all, which contradicts GDD §8.3's "every encounter"),
+or make the rule handlers bind every enemy rather than `enemies[0]`
+(changes what a Rule Fight's subject is). Flagged for 13l. Note this also
+makes QA-025's "Yellow Temperance is mathematically unwinnable for
+Long-Range" worse by a factor of four.
+
+---
+
+### QA-037 — S2 — five of the fourteen Menace conditions resolve into
+### profile keys that nothing outside `meta_menace.js` reads
+
+**Systems collided:** menace × run-flow.
+
+**Repro:** `node apps/standbattle/scripts/qa_systems_collision.js
+--case=c7a --verbose` (seed `c13f-unit`). `createMenaceProfile`
+(`meta_menace.js:84`) resolves them correctly — at max rank the profile
+reads `countdownFrames=1800 feedbackMult=1.75 invadesPerAct=3
+requiemDenied=true bossPhase3Early=true` — and no file reads any of them.
+
+**Symptom:** grep for each `MENACE_PROFILE_KEYS` entry
+(`meta_menace.js:26`) outside `meta_menace.js`/`scripts/`:
+
+| key | condition | consumers |
+|---|---|---|
+| `countdownFrames` | COUNTDOWN | **0** |
+| `feedbackMult` | FRAGILITY | **0** |
+| `invadesPerAct` | HUNTED | **0** |
+| `requiemDenied` | REQUIEM DENIED | **0** |
+| `bossPhase3Early` | CONVERGENCE | **0** |
+| `enemyHpMult` | BLOODTHIRST | 1 (`combat.js:176`) |
+| `enemyDamageMult` | KILLING INTENT | 2 |
+| `enemyRecoveryMult` | SHARPENED INSTINCT | 1 (`resolvers.js:108`) |
+| `extraEnemies` | CROWDED | 2 (`combat.js:178`, `encounter.js:77`) |
+| `healMult` | RATIONING | 2 |
+| `shopPriceMult` | INFLATION | 1 |
+| `offerCountDelta` | SCARCITY | 1 (`run_flow.js:180`) |
+| `enemyArmorAll` | UNYIELDING | 1 |
+| `actStartHpPct` | PRISTINE CONDITION | 1 (`run_flow.js:235`) |
+
+A player can spend up to 8 of the 30 Menace ranks (Countdown 3, Fragility
+3, Hunted 3, Requiem Denied 1, Convergence 1 = 11 ranks available) on
+conditions that raise their recorded Menace rank and change nothing about
+the run. The Menace board and `menaceRankOf` count them normally.
+
+**Consequence for this phase's own matrix:** two of the mission's named
+item-7 collisions cannot be constructed. "Requiem Denied plus a build that
+requires Requiem" and "Countdown plus a Survive objective" have no
+mechanism to collide with — recorded as untested rather than clean.
+
+**Frame:** n/a (profile resolution, seed `c13f-unit`).
+
+**Status:** logged, not fixed. Implementing five conditions is feature
+work, not a hardening fix. 13l should decide whether they are wired up or
+removed from the board; leaving them offered-but-inert is the worst of
+the three options.
+
+---
+
+### QA-038 — S3 — a hit-stop frame freezes the entire frame pipeline,
+### including the time-stop countdown and the player-death poll
+
+**Systems collided:** hit-stop × time-stop.
+
+**Repro:** `node apps/standbattle/scripts/qa_systems_collision.js
+--case=c3d` — seed `c13f-hs-ts`, **frame 101**: with
+`timeStopFrames = 120` and `hitstopMs = 200` set on the same frame, the
+time-stop counter is still 120 twelve frames later. Replay:
+`docs/qa/replays/c3d-hitstop-freezes-timestop-and-lose-check.json`.
+
+**Symptom:** `combat.js:224` (`if (juice.update(FRAME_MS)) return;`)
+returns before everything: the time-stop decrement (`:233`), `stepCrowd`/
+`stepHazards`, the per-entity `stepStatuses` sweep (`:238-242`), the
+`onCombatTick` dispatch (`:246-252`) and the `player.hp <= 0` lose poll
+(`:254`). The frame counter (`loop.frame`) still advances, so a hit-stop
+frame is a frame in which nothing at all happened. Two consequences worth
+naming: a time-stop overlapping a hit-stop is *extended* by the hit-stop's
+full duration rather than overlapping it, and a player whose HP is already
+≤ 0 stays `'fighting'` for the length of the freeze.
+
+Also note the layering: `juice.js` is a render module and
+`.claude/rules/render.md` flags it as deliberately on the real render
+clock. In the headless path it is fed a constant `FRAME_MS`, so it is
+deterministic here — but a render module holds the sim's stop button.
+
+**Frame:** 101 (seed `c13f-hs-ts`).
+
+**Status:** logged, not fixed. Every candidate fix moves what a hit-stop
+frame is allowed to skip, i.e. a change to `combat.js`'s per-frame
+sequence — the same class as QA-001 and QA-016, and it belongs in the same
+13l step-ordering batch.
+
+---
+
+### QA-039 — S3 — an action starts during a hit-stop frame, on a frame the
+### sim never ran
+
+**Systems collided:** cancel-window × hit-stop.
+
+**Repro:** `node apps/standbattle/scripts/qa_systems_collision.js
+--case=c3b` — seed `c13f-hitstop-input`, **frame 101**: with
+`hitstopMs = 200` set at frame 100, a `light` press at frame 101 takes the
+player from `idle` to `attack` while `stepFrame` is returning early.
+Replay: `docs/qa/replays/c3b-input-executes-during-hitstop.json`.
+
+**Symptom:** `combat.setKey` (`combat.js:206-216`) calls `performAction`
+directly on the key-down edge when `player.state === 'idle'`, outside
+`stepFrame` entirely — so it is unaffected by the hit-stop early return at
+`:224`. The move's costs are spent and its state is set on a frame in
+which no sim step occurs. It is self-limiting (the move leaves `idle`, so
+further presses buffer instead), and the practical window is small: a
+phase transition's `triggerHitstop(160)` (`combat_enemy.js:42`) is ~10
+frames, a purge's 120ms is ~7. Recorded as S3 because nothing illegal
+results — but "input is live during a sim freeze" is not stated anywhere
+and is the kind of asymmetry a later feature would trip over.
+
+**Frame:** 101 (seed `c13f-hitstop-input`).
+
+**Status:** logged, not fixed. Same step-ordering batch as QA-038.
+
+---
+
+### QA-040 — S3 — time-stop suspends a boss's phase-transition i-frames
+### and the purge immunity window instead of eating into them
+
+**Systems collided:** time-stop × boss-phase, time-stop × purge.
+
+**Repro:** `node apps/standbattle/scripts/qa_systems_collision.js
+--group=4`. `--case=c4a`, seed `c13f-ts-phase`, **frame 98**: a
+`killer_queen` phase transition sets `invulnFrames = 30`; entering a
+240-frame time-stop on that exact frame leaves it at **30** a hundred and
+twenty frames later. `--case=c4b`, seed `c13f-ts-purge`, **frame 125**: a
+purge window opens at `statusImmuneFrames = 359` and is still **359**
+after 150 frames of time-stop. Replays:
+`c4a-timestop-during-phase-transition.json`,
+`c4b-timestop-during-purge.json`.
+
+**Symptom:** `combat.js:240` skips `stepStatuses` for every enemy entity
+during time-stop, and `stepCrowd` (which owns `updateEnemyPhase` and the
+`invulnFrames` countdown, `combat_enemy.js:29-45`) does not run at all
+(`combat.js:236`). Both are the documented intent — the comment at
+`combat.js:240` says "the frozen world's own clocks stop too" — so this is
+**correct composition of two documented rules**, recorded because the
+player-facing result is the opposite of what The World is for: a time-stop
+landed on a phase transition buys a window against a boss that is
+invulnerable for all of it, and the invulnerability outlives the freeze by
+its own full remaining duration.
+
+**Frame:** 98 (seed `c13f-ts-phase`); 125 (seed `c13f-ts-purge`).
+
+**Status:** logged, not fixed. Graded S3 and arguably **BALANCE** rather
+than a defect — no invariant is broken and the behaviour follows from the
+rule as written. Making i-frames tick during time-stop would carve an
+exception into "the world doesn't move", which is a design change. 13l
+should decide whether The World is meant to be counterable this way.
+
+---
+
+### QA-041 — S3 — an unaffordable cancel fails silently: no `onMoveDenied`,
+### and the buffered action is left queued
+
+**Systems collided:** cancel-window × economy.
+
+**Repro:** `node apps/standbattle/scripts/qa_systems_collision.js
+--case=c3a` — seed `c13f-cancelcost`, **frame 16**: a Special buffered
+into `sp_light`'s frame-12 cancel window (`moves_star_platinum.js:10`)
+with Persistence at 34 against `sp_barrage`'s cost of 35 (`:44`) is still
+queued as `'special'` on frame 17. Replay:
+`docs/qa/replays/c3a-unaffordable-cancel-retains-buffer.json`.
+
+**Symptom:** the two ways a move starts diverge on failure.
+`tryAttack` fires the denial cue — `if (!attemptMove(...))
+combat.dispatcher.fire('onMoveDenied', {})` (`combat_player.js:79`) —
+while `tryCancel` just returns (`combat_player.js:129`), so a cancel
+denied on cost produces no cue for `fx.js`/`audio.js` and leaves
+`player.bufferedAction` set. Retaining the buffer is defensible on its own
+(that is what `INPUT_BUFFER_FRAMES` is for, `combat.js:206`), which is why
+this is S3 rather than S2 — the defect is the missing denial signal and
+the asymmetry between the two call sites, not the buffer itself.
+
+**Frame:** 16 (seed `c13f-cancelcost`).
+
+**Status:** logged, not fixed. Firing `onMoveDenied` from `tryCancel` is a
+one-line change, but it makes a hook fire in a situation it never fired in
+before, and `fx.js`/`audio.js`/`pose_player.js` all listen to it — a
+behaviour change with a render-layer blast radius, batched to 13l rather
+than taken mid-phase.
+
+---
+
+### QA-042 — S3 — feedback damage ignores the User's i-frames, so a
+### Projecting player cannot become invulnerable at all
+
+**Systems collided:** feedback × defense.
+
+**Repro:** `node apps/standbattle/scripts/qa_systems_collision.js
+--case=c6b --verbose` — seed `c13f-fb-invuln`, **frame 60**: two
+identical fights on `ENCOUNTERS.morioh_shopping_street`, Project engaged,
+then `applyFeedbackDamage` invoked with the `knife_thug`'s real
+`quick_stab` pattern. The control loses **3.19 HP**; a User with
+`player.invulnerable = true`, `hitIframeTimer = 999` and Guard up at full
+Persistence loses **3.19 HP** — bit-identical. Replay:
+`docs/qa/replays/c6b-feedback-ignores-user-invulnerability.json`.
+
+(Driven by a direct call rather than by geometry: whether a crowd hit
+lands on the Stand or the User depends on exact spacing
+(`combat_stand.js:100-111`), which made the geometric version of this case
+inconclusive across 5400 frames. The direct call uses the real combat, the
+real enemy and the real authored pattern; only the aiming is skipped.)
+
+**Symptom:** `applyFeedbackDamage` (`combat_stand.js:121-138`) computes the
+transfer and hands it to `applyHit` at `:132` with no defensive check of
+any kind. Skipping Guard and Clash is documented and deliberate —
+`combat_defense.js:33` routes a Stand-aimed hit past "the whole defensive
+triangle" because the triangle is the User's own body's toolkit. What is
+not stated anywhere is the consequence for Step: `player.invulnerable`
+(`defense.js:78`) is skipped on the same path, so `DODGE_CHARGE_MAX`'s
+"hard cap on invulnerability uptime" (`defense.js:5-7`) caps nothing
+against a Stand-routed hit. While Projecting, every incoming hit that
+resolves against the Stand is unavoidable by any means the player has.
+
+**Frame:** 60 (seed `c13f-fb-invuln`).
+
+**Status:** logged, not fixed. Graded S3 because it follows from a
+documented routing rule rather than violating one — but it is the rule's
+unstated half, and it interacts with QA-005/QA-006's Long-Range findings
+(a class that is Projected more or less permanently has no i-frames at
+all). Whether Step should cover the Stand is a GDD question, not a
+behaviour fix. Flagged for 13l.
+
+---
+
+### QA-043 — S3 — Warded is consumed by the first status of any kind,
+### including a purely benign one
+
+**Systems collided:** status × affix.
+
+**Repro:** `node apps/standbattle/scripts/qa_systems_collision.js
+--case=c2d` (seed `c13f-unit`): apply 1 stack of `mark` to a warded
+entity — the ward is spent and the Mark does not land — then apply 9
+stacks of `virus`, which lands in full.
+
+**Symptom:** `status.js:147` clears `affixData.warded` on the first
+`applyStatus` call, whatever it carries. `mark` (`status.js:93`) has no
+tick, no damage and no multiplier — it exists to be amplified or consumed
+by Hermit Purple content — so spending a one-shot ward on it is strictly
+worse than not having the ward. Any status-application build that carries
+a cheap utility status strips the affix's protection for free before its
+real payload arrives.
+
+**Frame:** 0 (seed `c13f-unit`, no combat needed).
+
+**Status:** logged, not fixed. Making the ward selective needs a notion of
+which statuses are "threats" — a new content axis (a tag, a threat flag)
+that no schema has today, i.e. a design addition rather than a behaviour
+fix. Flagged for 13l as **BALANCE-adjacent**: the mechanism does exactly
+what it says, and only the interaction is undesirable.
+
+---
+
+### QA-044 — S3 — `bus.effect` accepts a non-numeric priority; the failure
+### is deferred to dispatch and points at the wrong file
+
+**Systems collided:** effect-pipeline × content.
+
+**Repro:** `node apps/standbattle/scripts/qa_systems_collision.js
+--case=c1c` (seed `c13f-unit`). Registering with the arguments in the
+intuitive-but-wrong order — `bus.effect(name, fn, priority)` instead of
+`bus.effect(name, priority, fn, source)` (`hooks.js:148`) — succeeds
+silently; `sortByPriority` (`hooks.js:122`) then compares against `NaN`,
+and the first `runEffect` throws `list[i].fn is not a function` from
+`hooks.js:161`.
+
+**Symptom:** `assertKind` validates the hook *name* at that exact spot and
+throws a good error naming the caller's mistake; the priority is not
+validated at all. No shipped content mis-registers today (the scan in
+`--case=c8d` walks every entry), so this is purely a guard-rail gap for
+future content — a one-line `typeof priority` check next to the existing
+`assertKind` would move the error to the registration site.
+
+**Frame:** 0 (seed `c13f-unit`).
+
+**Status:** logged, not fixed. S3, batched to 13l with QA-033's proposed
+validator work — both are "the pipeline should reject this at load rather
+than at dispatch".
+
+---
+
+### QA-045 — none found — the pipeline's own guarantees, all status pairs,
+### and the feedback/resource boundaries hold
+
+`node apps/standbattle/scripts/qa_systems_collision.js` — **56 of 74
+cases clean**, 0 throws. What was checked and passed, so 13l can diff
+against it rather than re-derive it:
+
+- **Priority bands (`c1a`).** Registering CLAMP → MULTIPLY → ADD, i.e.
+  authoring order exactly inverted, still executes add → multiply → clamp
+  and the clamp wins. Priority beats authoring order.
+- **Tie determinism (`c1b`).** Ten effects at identical priority, with
+  registrations at other bands interleaved to force `sortByPriority` to
+  re-run (`hooks.js:152` re-sorts on every registration), produce a
+  byte-identical execution order across 200 fresh dispatchers. It holds
+  because `Array.prototype.sort` is spec-stable and re-sorting a sorted
+  array preserves order — nothing in the codebase asserts that, so the
+  seed guarantee rides on an engine property rather than on an invariant
+  anyone wrote down. Recorded as a fact, not a finding.
+- **Cancel vs the CLAMP band (`c1d`).** A cancel in the ADD band *does*
+  break `runEffect` (`hooks.js:158`) before the CLAMP band, leaving
+  `ctx.damage` unclamped — but all three damage consumers
+  (`combat_defense.js:130`, `combat_stand.js:130`, `resolvers.js:217`)
+  zero the value on cancel, so the unclamped number never reaches a stat.
+  Latent only for a future call site that reads ctx after a cancel.
+- **All 36 status pairs (`c2-pair-*`).** Every ordered pair of the six
+  statuses in `STATUS_DEFS` (`virus`, `frozen`, `gravity`, `charge`,
+  `mark`, `doom`), both apply orders, then 400 frames of `stepStatuses`:
+  no dropped status, no stack over `maxStacks`, no negative stack or
+  timer.
+- **Status on a corpse (`c2b`).** Virus applied on the exact frame an
+  enemy's HP hits 0 does not tick HP negative — `fighter.js`'s
+  `applyDamage` floors it. (The *other* half of that interaction, a DoT
+  kill skipping the death pipeline, is QA-021 and is unchanged.)
+- **Purge immunity (`c2c`).** `statusImmuneFrames` swallows every status
+  application in its window, silently, exactly as GDD §18B specifies.
+  Recorded so a future "my status didn't apply" report is checked against
+  purge before being filed as a bug.
+- **Step during Project (`c3c`).** Confirmed impossible, not assumed: 74
+  Step attempts across a 900-frame Project, all denied at
+  `combat_player.js:66`, zero charges consumed.
+- **Feedback damage routing (`c6a`, `c6c`).** A feedback kill
+  mid-attack transitions the player to `'dead'` cleanly and sets
+  `outcome: 'lose'` exactly once — no lose→win flip, no move left live on
+  a dead player. A full crowd fight held under Project kept player HP
+  finite and within `[0, maxHp]` for 5400 frames, and `combat.stand` never
+  grew an HP field.
+- **Resource boundaries (`c5a`, `c5b`, `c5d`).** Momentum gained at
+  exactly 100 stays 100; halved at exactly 0 stays 0 (not `-0`); a Rush
+  pressed on the exact frame `onMomentumHitTaken` halves the bar never
+  spends past 0 across 1496 attempts. `combat_player.js:106`'s inline
+  `player.momentum -= cost` is the one resource write that does not route
+  through `resources.js`, but the affordability gate at `:92` holds the
+  floor — noted, not a defect today.
+- **Scarcity's offer floor (`c7b`).** 400 consecutive offers under
+  Scarcity rank 2 with the candidate pool progressively starved (every
+  offered Fragment marked owned) never produced an empty or zero-choice
+  offer; minimum size 1. `run_flow.js:180`'s `Math.max(1, ...)` floors the
+  slice length rather than the pool, so it would not save an
+  already-empty pool — but the pool never empties.
+- **Rule Fight termination under Crowded (`c7e`).** All 8 inflated Rule
+  Fights reach a terminal outcome inside 5400 frames. This is what keeps
+  QA-036 at S2.
+- **Menace profile integrity (`c8c`).** All 14 `MENACE_PROFILE_KEYS`
+  resolve finite and correctly typed with every condition at max rank.
+- **Telegraph floor vs Menace (`c8b`).** The floor cannot be shrunk out
+  from under the validator: Sharpened Instinct is the only condition that
+  touches attack timing and it reaches `enemyRecoveryMult` only
+  (`resolvers.js:108`), never `windupFrames`. `combat.js:112-125`'s own
+  comment claims this by construction; confirmed by measurement.
+- **Unlock-aware validation (`c8a`).** There is no unlock-gated content
+  path in this build, so an entry that is legal only under a specific
+  unlock state cannot exist — the mission's item-8 case is structurally
+  unreachable in that direction. The direction it *is* reachable in is
+  QA-033.
+
+`npm run validate`, `npm run assert`, `npm run determinism` and
+`npm run sweep -- --runs=4000` all pass unchanged (no engine file was
+modified this sub-phase).
+
+---
+
+### QA-046 — structural absences — four mechanics the mission's matrix
+### names do not exist in this codebase
+
+Recorded explicitly rather than reported as clean, so 13l does not read
+"no finding" as "verified".
+
+1. **Bleed and Break are not statuses.** `STATUS_DEFS` (`status.js:35`)
+   holds exactly six ids: `virus`, `frozen`, `gravity`, `charge`, `mark`,
+   `doom`. There is no `bleed` (damage per distance moved) and no `break`
+   anywhere. The mission's "Bleed on a Frozen or Leashed target" and
+   "Break consumed by a hit that was cancelled" cases have no subject.
+2. **Bomb-Primed and Leashed are affixes, not statuses** (`affixes.js:26`,
+   `:52`; `entity.affixData.leashed` is read at `combat_enemy.js:94`).
+   "Frozen plus Bomb-Primed death" is therefore a status × affix case, and
+   is covered in that form by the `c2-pair-*` sweep plus QA-043.
+3. **No Death 13 / sleep mechanic.** No sleep status, no `rf_death13` in
+   `rule_fights.js`/`rule_fights_2.js`, no such encounter in
+   `data_encounters.js`. "Death 13's sleep cycle overlapping a Rule Fight
+   win condition" has no subject.
+4. **The Stand has no HP of its own.** `combat_stand.js:114-115` states it
+   outright, `combat.stand` carries no `hp` field, and no Aspect adds one
+   (`ASPECT_LIST`, `aspects.js:21`) — there is no "Aspect of the Rite"
+   equivalent. "Separate Stand HP interacting with feedback rules that
+   assume there is none" has no subject. (Phase 13e reached the same
+   conclusion about a Requiem-elevation slot mechanic.)
+
+Additionally, two of the mission's item-7 collisions are unconstructable
+for a different reason — the conditions exist but do nothing. See QA-037.
+
+**Repro:** `node apps/standbattle/scripts/qa_systems_collision.js
+--verbose` prints all four under "STRUCTURAL ABSENCES"
+(`--case=c2e`, `--case=c4d`, `--case=c6d`).
+
+---
 ## Not reproduced
 
 Nothing from Phase 13d's own matrix failed to reproduce — every finding
@@ -1101,3 +1684,37 @@ rather than clean**, and 13l must not read them as verified:
    `rollAffixes` (`affixes.js:124`) returns `[]` for any non-elite enemy
    regardless of Menace rank, so the Toxic-affix route I first assumed does
    **not** exist for `budogaoka_bites_the_dust`'s lone `knife_thug`.
+
+### Phase 13f additions
+
+Nothing from 13f's matrix failed to reproduce — every finding above
+replays from `qa_systems_collision.js --case=<id>` at the logged seed and
+frame, and 43 of the 74 cases carry a recorded fixture in
+`docs/qa/replays/`. Five items are **untested rather than clean**, and
+13l must not read them as verified:
+
+5. **Four mission-named mechanics do not exist** (QA-046): Bleed, Break,
+   Death 13's sleep, and separate Stand HP. Their cases were not run.
+6. **Two mission-named Menace collisions are unconstructable** (QA-037):
+   Requiem Denied and Countdown resolve into profile keys no file reads,
+   so "Requiem Denied plus a build that requires Requiem" and "Countdown
+   plus a Survive objective" have no mechanism to collide with. Not clean
+   — there is nothing there yet.
+7. **Effect-priority ties are deterministic today by engine property, not
+   by contract** (QA-045). `sortByPriority` (`hooks.js:122`) relies on
+   `Array.prototype.sort` being stable; 200 trials agree, but nothing in
+   the codebase asserts it, so the seed guarantee has no test that would
+   fail if a future refactor sorted unstably.
+8. **The `c2-pair-*` sweep covers status pairs, not status pairs under
+   combat.** All 36 ordered pairs were exercised against `applyStatus`/
+   `stepStatuses` directly. Frozen-plus-forced-movement and
+   Gravity-plus-a-launcher were not exercised in a fight because
+   `frozenSolid` (`status.js:56`) and `gravity` have **no movement
+   consumer anywhere** — both are flags content reads, not engine
+   lockouts — so there is no movement rule for a launcher to contradict.
+9. **`runStatusDeathHooks` (`status.js:224`) has zero call sites**, so
+   Virus's documented on-death spread never fires. Its `onDeath` is an
+   explicit no-op today (`status.js:47`), so nothing is currently lost —
+   but the first status authored with a real `onDeath` will silently do
+   nothing. Recorded here rather than as a finding because no shipped
+   content is affected.
