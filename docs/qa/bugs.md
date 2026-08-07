@@ -2002,3 +2002,201 @@ independent-try/catch design (Phase 0) works exactly as documented.
 **Repro:** Playwright agent, direct `localStorage` manipulation of
 `app_standbattle_run` before reload, all four payloads above.
 
+
+
+### QA-060 — S1 — fixed — Rest node could reach zero enabled choices
+### with no exit at all
+
+**Repro (Node, unit-level, deterministic):**
+```
+node -e "import('./apps/standbattle/rest.js').then(({restChoices}) => {
+  const runState = { hp: 100, maxHp: 100, tension: 5, upgradePoints: 0, fragmentsBySlot: {} };
+  console.log(restChoices(runState));
+});"
+```
+prints all three choices with `enabled: false` (REST needs `hp < maxHp`;
+UPGRADE needs `upgradePoints > 0` and an eligible non-maxed slot; RAISE
+TENSION needs `tension < 5`) — a full-HP run that has spent its upgrade
+points/maxed its Fragments and already sits at Tension 5 (both entirely
+reachable states) hits all three at once. `rest.js` (pre-fix) drew only
+those three buttons and nothing else; `pickRestChoice` only ever returns
+an index for `choices[i].enabled`, so `applyRestChoice` could never fire.
+`rest`/`'rest'` is not in `hub_flow.js`'s `HUB_SCENES`, so `hubKey`'s
+one-key Escape (index.js:236) never runs for this scene either — no
+click landed anywhere on screen, no key did anything. Unlike Shop
+(`shop.js`'s `leaveRect`/LEAVE) and Archive (`archive_stub.js`'s
+CONTINUE), Rest had no always-on exit button at all.
+
+**Status:** fixed — `rest.js` now draws an always-enabled LEAVE button
+(`leaveRect`, mirroring `shop.js`'s pattern) and exports
+`pickRestLeave`; `index.js`'s `'rest'` click branch checks it after
+`pickRestChoice` comes back -1 and calls `commitNode(state, env)`
+directly, the same "nothing happened, move on" path RAISE TENSION/REST/
+UPGRADE already end at. Re-verified the same degenerate `runState`
+against the new `pickRestLeave` — always hit-testable regardless of
+`choices`.
+
+### QA-061 — S1 — fixed — an empty Fragment/Treasure reward offer
+### routed to the 'reward' scene with zero cards and no exit
+
+**Repro (Node, unit-level):** `fragment_offers.js`'s own header
+documents the failure mode directly: "Returns an array of up to 3
+candidates; fewer only in the late-run edge case where the whole pool is
+already owned-and-maxed" — that "fewer" can be zero once every Fragment
+slot a run's allowed donors can offer is owned at max level and every
+Duo candidate is also owned. `item_offers.js`'s `generateTreasureOffer`
+has the identical shape: its own fallback comment only guarantees
+"whichever pool has unowned entries left", not that either pool is
+nonempty, so a run that has collected every Relic *and* every Disc gets
+`[]` from both `relicOffer()` and `discOffer()`. Pre-fix, `run_flow.js`'s
+`enterReward`/`enterTreasureReward` set `state.currentOffer = []` and
+`state.scene = 'reward'` unconditionally. `rewards.js`'s `drawReward`
+does `offer.forEach(...)` (zero cards drawn) and `pickRewardChoice`
+loops `for (i < offer.length)` (never returns an index for an empty
+array) — a blank reward screen with no click target and no key.
+
+**Status:** fixed — both `enterReward` and `enterTreasureReward` in
+`run_flow.js` now check `!offer.length` and call `commitNode(state,
+env)` directly instead of switching to the `'reward'` scene, exactly as
+if the node had nothing to give (which, at that point, it doesn't).
+
+### QA-062 — S2 — logged, not fixed — held-key state has no
+### blur/context-clear path
+
+**Repro (Node, unit-level, deterministic):**
+```
+node -e "import('./apps/standbattle/input.js').then(({createInputSystem}) => {
+  const input = createInputSystem({}, false);
+  console.log(input.resolveKey('KeyA', true));   // { action:'left', kind:'held', down:true }
+  console.log(Object.keys(input));                // no releaseAll/clearHeld/reset method
+});"
+```
+`input.js`'s `heldState` is only ever written by `resolveKey` itself,
+and the returned object has no method to force every held action back
+to false. `index.js` has no `blur`/`visibilitychange` listener anywhere
+in the file (confirmed by a full `grep -rn "blur\|visibilitychange"`
+across `apps/standbattle/` and `kernel/`) that could call such a method
+even if one existed. A player holding a movement/guard/project key who
+alt-tabs away, releases the physical key in another window, and returns
+leaves that action's `heldState` (and `combat`'s own mirrored key state,
+since `index.js:244` forwards every down/up straight to
+`combat.setKey`) stuck `true` until the *same* key is pressed and
+released again with the canvas focused — invisible movement/guard/
+Project until then, but always self-correcting on the next tap of that
+key, and never blocking any menu, click, or scene exit.
+
+**Status:** not fixed (deferred to 13l per this phase's severity
+policy). A correct fix is a `document`-level `blur`/`visibilitychange`
+handler in `index.js` that calls a new `input.releaseAll()` (and clears
+`combat`'s own held keys the same way `setKey` would on a real keyup)
+whenever the window loses focus — small, but a new capability on
+`input.js`'s public surface, which this phase's fix budget is S1-only.
+
+### QA-063 — S2 — logged, not fixed — REBIND KEYS lets an action
+### (including FLEE) end up with zero bound keys, unwarned
+
+**Repro:** `settings_panel.js`'s `buildRebindPanel`'s `onKeydown`
+(`input.rebind(ev.code, waiting)`) unconditionally overwrites
+`keymap[code] = waiting` with no check for whether `code` was the only
+key still bound to some *other* action. Rebinding Escape's default
+binding (the only default key mapped to `flee`) to any other action
+(e.g. `light`) leaves `flee` with zero codes in `keymap` — confirmed by
+reading `codesFor(action)` (`settings_panel.js:51-53`), which is exactly
+`Object.entries(input.keymap).filter(([, a]) => a === action)`, i.e.
+legitimately empty after such a rebind. `combat.js:209`'s only path to
+`combat.outcome = 'fled'` is `code === 'flee'`, so a player who does this
+loses the no-cost early-exit GDD §4.7/§15 gives Stalker/Survive
+encounters — they can still win or lose those fights normally (`flee`
+was never required to end a fight, only to end it early for free), so
+this is not a screen-trap, just a lost affordance with no UI feedback
+that it happened.
+
+**Status:** not fixed (deferred to 13l). The correct fix — warn on
+"this key was the last one bound to X" or refuse to leave an action
+fully unbound — is a UI-policy decision for the rebind panel, not a
+one-line hardening patch, and is explicitly out of this phase's S1-only
+fix budget.
+
+### QA-064 — S3 — logged, not fixed — several un-wrapped content
+### strings overflow their panel's pixel budget
+
+**Repro:** `node apps/standbattle/scripts/qa_string_overflow.js` (new
+script this phase, re-runnable, no DOM/canvas required — computes
+`font_data.js`'s fixed 5px-glyph width the same way `font.js`'s own
+`textWidth` does and checks every un-wrapped `text()` call site's
+content string against the pixel width it is actually drawn into). 21
+overflows found across 682 checked strings: several Archive node names
+in `hub_panels.js`'s row list (e.g. `"DONOR: HIGHWAY STAR"`, 113px vs.
+~104px budget), four Menace condition descriptions drawn right-aligned
+on the same row as their (already long) name+pips label
+(`hub_panels.js:169-180`), one Relic name and several
+Boss/Encounter labels in the Training Room's row list
+(`training.js:70/74/75`, worst case `"DIRTY DEEDS DONE DIRT CHEAP --
+REINFORCED"` at 245px vs. a 158px budget). All of these are un-wrapped
+`text()` calls in `hub_ui.js`'s `rowList` (label drawn at `x+6` with no
+clip) or a same-row right-aligned sibling — worst case is visual overlap
+or a label running under/into the scrollbar, never a lost click target
+(every row's hit-rect in `rowList` is still the full row width returned
+by the same function that drew it, independent of label overflow) and
+never a blocked exit.
+
+**Status:** not fixed (deferred to 13l — either widening these specific
+panels or truncating/wrapping `rowList` labels is a UI layout change,
+out of this phase's S1-only fix budget). Re-run command above to verify
+after any future content addition; the budgets used are documented
+per-check in the script's comments and are conservative (they reserve
+generous space for each row's right-aligned sibling).
+
+### QA-065 — none found — the classic rebindable-cancel-onto-confirm
+### softlock class does not exist in this codebase
+
+**Repro:** read every scene's exit path in `index.js`/`hub_flow.js`/
+`map.js`/`shop.js`/`rest.js`/`archive_stub.js`/`scene_continued.js`.
+`input.js`'s `ACTIONS` (the only rebindable set, via
+`settings_panel.js:11`) is entirely combat verbs — `left/right/forward/
+back/light/medium/heavy/dodge/parry/special/rush/guard/project/command/
+flee` — none of them a menu confirm/cancel pair. Every non-combat
+scene's exit (hub back-out `Escape`, hub scroll `ArrowUp`/`ArrowDown`,
+Training's `Enter`) is read via `hubKey(state, env, ev.code)` off the
+**raw** `ev.code`, bypassing `input.resolveKey`/`keymap` entirely
+(`index.js:236-238`) — rebinding cannot touch any of them. The one
+rebindable action that doubles as a scene-exit, `flee`
+(`combat.js:209`), is optional (QA-063) rather than the only way out of
+a fight, so unbinding it can't trap a run either. No two menu actions
+share a rebindable key in this game at all, because menus have no
+rebindable keys.
+
+### QA-066 — none found — catch-up-spiral guard and hub-spawn-to-
+### run-start latency both verified healthy against current content
+
+**Repro:** `sim_loop.js:16`'s `MAX_FRAMES_PER_ADVANCE = 8` already caps
+`createFixedStepLoop.advance()` at 8 stepped frames per call and resets
+the accumulator to 0 past that cap (`sim_loop.js:37`) — a long tab-
+switch pause cannot replay a backlog of frames in one burst.
+`index.js`'s own outer loop (`frame()`, not sim_loop.js — this is the
+render-tick -> `combat.update(dt)` boundary) independently clamps
+`dt = Math.min(50, now - t0)` per `requestAnimationFrame` tick
+(`index.js:255`) before it ever reaches `combat.update`, so even a
+multi-second real-time gap between rAF callbacks (backgrounded tab,
+debugger break) is presented to the sim as at most 50ms — both guards
+were already correct pre-13h, no regression, nothing to fix. Separately,
+timed `newRun`'s actual core path (`launchLoadout` + `createFreshRunState`,
+the same call `index.js:154`'s `newRun` makes) end-to-end:
+```
+node -e "import('./apps/standbattle/hub_flow.js').then(async ({createHubState, launchLoadout}) => {
+  const { createFreshRunState } = await import('./apps/standbattle/run_flow.js');
+  const { createRng } = await import('./apps/standbattle/rng.js');
+  const { ensureMetaProgress } = await import('./apps/standbattle/save.js');
+  const meta = ensureMetaProgress({});
+  const hub = createHubState(meta);
+  const t0 = process.hrtime.bigint();
+  const loadout = launchLoadout(meta, hub.unlocks);
+  const rs = createFreshRunState(Date.now()+'-x', createRng('x'), loadout.standId, loadout);
+  console.log('ms:', Number(process.hrtime.bigint()-t0)/1e6, 'nodes:', Object.keys(rs.graph.nodes).length);
+});"
+```
+consistently prints ~3ms for a full Act I map generation (14 nodes) at
+current (Phase 10) content volume — GDD §20's "under 8 seconds" rule is
+about click count (title -> hub -> LAUNCH is two clicks, `launch()`
+does everything synchronously per `index.js:162`'s own comment), and
+compute cost is nowhere near a bottleneck.

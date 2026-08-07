@@ -179,6 +179,15 @@ export function enterReward(state, env, forceRarePity) {
   const full = generateOffer(state.runRng.stream('rewards'), rs, tensionRarityMult(rs.tension));
   const offer = menace.offerCountDelta ? full.slice(0, Math.max(1, full.length + menace.offerCountDelta)) : full;
   recordOffer(rs.telemetry, offer);
+  /* QA-060: fragment_offers.js's own header documents "fewer only in the
+     late-run edge case where the whole pool is already owned-and-maxed" --
+     that "fewer" can be zero. rewards.js draws zero cards and
+     pickRewardChoice can never return an index for an empty offer, so
+     routing an empty offer to the 'reward' scene was a dead screen with
+     no click target and no key. Nothing was actually won -- fall straight
+     through to the node commit exactly as if the player had a slot to
+     fill but nothing to put in it. */
+  if (!offer.length) { commitNode(state, env); return; }
   state.currentOffer = offer;
   state.scene = 'reward';
   persistRun(state, env);
@@ -193,6 +202,11 @@ export function enterReward(state, env, forceRarePity) {
 function enterTreasureReward(state, env) {
   const rs = state.runState;
   const offer = generateTreasureOffer(state.runRng.stream('rewards'), rs);
+  /* QA-060: same empty-offer dead-screen as the Fragment path above --
+     item_offers.js's own fallback comment only guarantees "whichever pool
+     has unowned entries left", not that either pool is nonempty; a run
+     that has collected every Relic and every Disc gets [] from both. */
+  if (!offer.length) { commitNode(state, env); return; }
   state.currentOffer = offer;
   state.scene = 'reward';
   persistRun(state, env);
