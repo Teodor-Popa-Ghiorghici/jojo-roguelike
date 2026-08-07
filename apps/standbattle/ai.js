@@ -230,7 +230,11 @@ export function stepEnemyAI(ai, dist, rng, canCommit, menace) {
     return null;
   }
   if (ai.state === 'approach') {
-    if (canCommit === false) return null;
+    /* Phase 13d (QA-008): `!= null && !canCommit`, not `=== false`. A caller
+       computing the gate with `||` over an optional def field yields
+       `undefined` for "no token", which a strict `=== false` waved through.
+       Only a genuinely OMITTED argument still means "ungated". */
+    if (canCommit != null && !canCommit) return null;
     if (dist <= ai.approachRange || rng.random() < 0.002) {
       /* Phase 10: the pattern is resolved through resolvers.js's one choke
          point (invariant 5) instead of read straight out of PATTERNS, so
@@ -268,4 +272,18 @@ export function stepEnemyAI(ai, dist, rng, canCommit, menace) {
 
 export function enemyIsVulnerableToStagger(ai) {
   return ai.state === 'windup' || ai.state === 'approach';
+}
+
+/* Phase 13d (QA-009): the states stepEnemyAI above can actually advance.
+   Anything else is terminal as far as the state machine is concerned --
+   GDD §15's 'flee' is one (combat_enemy.js returns before stepEnemyAI ever
+   sees a fleeing enemy), and any future bespoke state would be another. An
+   enemy parked in a terminal state can never return to 'approach', which is
+   the only condition token.js releases a committed slot on, so handing it a
+   token stalls that slot for the rest of the encounter. Lives here, next to
+   the machine that owns the states, rather than as a 'flee' string check in
+   token.js -- a new non-advancing state is then covered for free. */
+const ADVANCING_STATES = new Set(['approach', 'windup', 'active', 'recover', 'staggered']);
+export function canHoldAttackToken(enemy) {
+  return enemy.hp > 0 && ADVANCING_STATES.has(enemy.ai.state);
 }

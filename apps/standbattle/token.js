@@ -17,6 +17,7 @@
    system is a no-op for every encounter that existed before Phase 5. */
 
 import { scoreForToken } from './profiles.js';
+import { canHoldAttackToken } from './ai.js';
 
 const TOKEN_COOLDOWN_MIN_FRAMES = 36; // 0.6s
 const TOKEN_COOLDOWN_MAX_FRAMES = 72; // 1.2s
@@ -60,7 +61,12 @@ export function stepTokens(tokenSystem, enemies, player, aiRng) {
 
   tokenSystem.slots.forEach(slot => {
     if (slot.holder) {
-      if (slot.holder.hp <= 0) { releaseSlot(slot, aiRng); return; }
+      /* Phase 13d (QA-009): subsumes the old `hp <= 0` check. A holder that
+         is dead OR parked in a state the AI machine can never advance out of
+         (ai.js's canHoldAttackToken) gives the slot straight back -- it can
+         never satisfy the committed->'approach' release below, so without
+         this the whole melee pool stalls for the rest of the encounter. */
+      if (!canHoldAttackToken(slot.holder)) { releaseSlot(slot, aiRng); return; }
       if (!slot.committed && slot.holder.ai.state !== 'approach') {
         slot.committed = true;
       } else if (slot.committed && slot.holder.ai.state === 'approach') {
@@ -70,7 +76,8 @@ export function stepTokens(tokenSystem, enemies, player, aiRng) {
     }
     if (slot.cooldownFrames > 0) { slot.cooldownFrames--; return; }
     // GDD §4.2 Hound (#7): "ignores attack tokens" -- never competes for or holds a slot
-    const candidates = alive.filter(e => !e.hasToken && !e.def.ignoresToken && poolOf(e) === slot.pool && e.ai.state !== 'staggered');
+    const candidates = alive.filter(e => !e.hasToken && !e.def.ignoresToken && poolOf(e) === slot.pool &&
+      e.ai.state !== 'staggered' && canHoldAttackToken(e));
     if (!candidates.length) return;
     const chosen = weightedPick(candidates, player, aiRng);
     chosen.hasToken = true;
