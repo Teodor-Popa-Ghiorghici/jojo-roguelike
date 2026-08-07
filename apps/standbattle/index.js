@@ -44,9 +44,16 @@ export default {
   resizable: true,
 
   async mount(root, ctx) {
+    this._closed = false;
     const saveStore = createSaveStore(ctx);
     const meta = ensureMetaProgress(await saveStore.loadMeta());
     const savedRun = await saveStore.loadRun();
+    /* unmount() can fire while these awaits are still pending -- wm.js
+       calls mount() without awaiting it, and a close click resolves
+       synchronously in the same tick. Bail before touching the DOM/rAF/
+       audio so a fast open-then-close never leaves an orphaned frame
+       loop or music engine running after the window is gone. */
+    if (this._closed) return;
 
     const state = {
       scene: 'title', runState: null, runRng: null, combat: null,
@@ -158,7 +165,7 @@ export default {
        rebinding, and the Daily/Weekly challenge launchers + leaderboard,
        all split into settings_panel.js so this file stays the thin mount
        shell. */
-    mountAccessibilityBar(bar, pane, {
+    const accessibilityBar = mountAccessibilityBar(bar, pane, {
       meta, saveStore, env, input, state, ctx,
       onLaunchDaily: () => { if (isHubScene(state.scene)) { launchChallenge(dailySeedId()); if (window.Snd) window.Snd.select(); } },
       onLaunchWeekly: () => { if (isHubScene(state.scene)) { launchChallenge(weeklySeedId()); if (window.Snd) window.Snd.select(); } }
@@ -276,8 +283,12 @@ export default {
     musicStart();
     musicSetIntensity(0);
 
-    this._cleanup = () => { cancelAnimationFrame(raf); ro.disconnect(); musicStop(); };
+    this._cleanup = () => { cancelAnimationFrame(raf); ro.disconnect(); musicStop(); accessibilityBar.destroy(); };
+    if (this._closed) { this._cleanup(); this._cleanup = null; }
   },
 
-  unmount() { if (this._cleanup) this._cleanup(); }
+  unmount() {
+    this._closed = true;
+    if (this._cleanup) { this._cleanup(); this._cleanup = null; }
+  }
 };

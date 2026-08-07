@@ -71,7 +71,7 @@ export function createCombat(enemyOrEncounterDef, ownedFragments, opts, rng) {
   DISCS.forEach(d => contentRegistry.registerDisc(d));
   DUO_LIST.forEach(d => contentRegistry.registerDuo(d));
   assertContentValid(contentRegistry, dispatcher);
-  (ownedFragments || []).forEach(owned => installFragment(dispatcher, FRAGMENTS[owned.id], owned.level));
+  (ownedFragments || []).forEach(owned => { const def = FRAGMENTS[owned.id]; if (def) installFragment(dispatcher, def, owned.level); });
   /* Phase 10: Relics/Duos are binary owned/not-owned, no slot/level (tech
      §3's own schemas never gave them one) -- opts.relics/opts.duos are
      plain arrays of owned ids, resolved against their pool the same way

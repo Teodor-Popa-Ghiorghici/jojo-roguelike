@@ -89,6 +89,11 @@ export function ensureMetaProgress(meta) {
 function migrate(entry, migrations, targetVersion, fallback) {
   if (!entry || typeof entry !== 'object' || typeof entry.version !== 'number') return fallback;
   let version = entry.version;
+  // A version newer than this build understands (a save written by a
+  // future build, or a tampered/corrupt version number) has no migration
+  // path backwards -- treat it exactly like an unmigratable old version
+  // rather than trusting its data's shape blindly.
+  if (version > targetVersion) return fallback;
   let data = entry.data;
   while (version < targetVersion) {
     const step = migrations[version];
