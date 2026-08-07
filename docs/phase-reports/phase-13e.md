@@ -1,0 +1,94 @@
+# Phase 13e — does every build actually work
+
+**Built:** `apps/standbattle/scripts/qa_matrix.js` — new durable script,
+real-flow driver (`run_flow.js`/`run_choices.js`, same pattern as
+`qa_run_sweep.js`) over every (standId, aspectId) combo `aspects.js`
+actually defines, reporting completion rate/mean node count/mean damage
+taken per config.
+
+**Item 1 — Stand x Aspect matrix.** 16 configs (4 Stands carry Aspects x 4
+each — `crazy_diamond`/`gold_experience`/`sticky_fingers`/`hermit_purple`
+have none, run separately with `aspectId: null`), 15 seeds each, 300 runs
+total: **100.0% completion on every config**, zero throws, zero non-finite
+HP. See table below.
+
+**Item 2 — range extremes.** No content anywhere (`fragments.js`,
+`relics.js`, `aspects.js`, `duo_fragments.js`) modifies the `range` stat —
+it's fixed per-Stand, 2 to 9. `feedbackPct`'s documented 0.10 floor needs
+range >= 9.23 and is therefore dead code under the shipped roster (max
+observed 0.115 at range 9) — QA-031, S3, boundary-doesn't-exist rather
+than a defect. `tetherPx` (26*range) is always positive (min 52px), never
+risks the `standDist/tetherPx` divide in `hud.js`. No "20m Radius"/"Rite"
+equivalent exists in this codebase — the only detachment mechanic is
+Long-Range's generic `standDetached` flag, already the subject of
+QA-005/007/012/018/025.
+
+**Item 3 — degenerate builds.** Stacked every `onCombatTick selfDamage`
+relic (`relic_stone_mask` = the literal Stone-Mask-equivalent, 1 HP/sec,
+plus 5 more) with Killer Queen's Sheer Heart Attack Aspect against a
+frozen enemy: clean death at frame 599, HP lands exactly at 0, `outcome`
+transitions to `'lose'` exactly once, no throw over 4000 stepped frames —
+QA-030. No "Arrow Shrine"-equivalent (max-HP-reducing item) exists in this
+codebase at all — grepped every write path to `runState.maxHp`; only `hp`
+ever moves. Purge mechanic (`purge.js`, GDD §18B) reviewed: it's a fixed
+6s status-immunity window with no input lock, so a pure-status build still
+has full move/reposition/item access during it — no stall, nothing further
+to test given no move deals literal zero direct damage.
+
+**Item 4 — Long-Range kiting.** Not independently re-run; QA-012 (Phase
+13d) already answers this directly for Hound/Warden — Hound lands 1.0% of
+hits on the User under Long-Range (98.6% under Close), Warden lands **0**
+hits in 36,000 frames — so a maximum-kite policy trivially beats both,
+same root cause as QA-005/018 (no enemy ever moves in z or chases the
+Stand). BALANCE per QA-012's own framing, not re-logged under a new ID.
+
+**Items 5/6 — disc swaps, Requiem-equivalent, Duo eligibility.** QA-032:
+all 20 Duo Fragments' donor pairs are real, ownable donors reachable
+through `buildDuoCandidates`. Disc slot overwrite is safe by construction
+— `combat.js` rebuilds the dispatcher from `discsBySlot` fresh every
+`createCombat` call, so an overwritten slot's old hooks can never survive
+into the next fight; no persistent dispatcher for a stale hook to leak
+into. No "Requiem-elevation" slot mechanic exists under that name —
+`Requiem` here is a Silver Chariot Aspect and an enemy/boss affix tier,
+not invented per the mission brief.
+
+**Fixed:** nothing — no S1 found this sub-phase.
+
+**Could not reproduce:** nothing attempted was flaky; every check above
+is deterministic (fixed seeds or code-inspection-backed).
+
+**New ledger entries:** QA-029/030/031/032, all "none found" or S3
+boundary notes — first sub-phase since 13a with zero new S1/S2.
+
+## Self-verify table (item 1, 15 seeds/config)
+
+| Stand | Aspect | Completion | Mean nodes | Mean dmg taken |
+|---|---|---|---|---|
+| star_platinum | sp_ora_barrage | 100.0% | 8.7 | 38.8 |
+| star_platinum | sp_star_finger | 100.0% | 6.4 | 32.6 |
+| star_platinum | sp_time_thief | 100.0% | 6.5 | 20.2 |
+| star_platinum | sp_world_echo | 100.0% | 7.5 | 44.9 |
+| silver_chariot | sc_fencer | 100.0% | 6.1 | 28.9 |
+| silver_chariot | sc_ricochet | 100.0% | 7.9 | 37.1 |
+| silver_chariot | sc_armour_off | 100.0% | 6.5 | 7.2 |
+| silver_chariot | sc_requiem_stance | 100.0% | 5.2 | 8.5 |
+| hierophant_green | hg_web | 100.0% | 2.3 | 0.0 |
+| hierophant_green | hg_emerald_lattice | 100.0% | 3.7 | 0.0 |
+| hierophant_green | hg_barrier | 100.0% | 3.7 | 0.0 |
+| hierophant_green | hg_hierophant_trap | 100.0% | 4.2 | 0.0 |
+| killer_queen | kq_detonator | 100.0% | 8.3 | 28.9 |
+| killer_queen | kq_third_bomb | 100.0% | 6.3 | 27.1 |
+| killer_queen | kq_sheer_heart | 100.0% | 6.5 | 29.2 |
+| killer_queen | kq_bites_the_dust | 100.0% | 8.1 | 48.2 |
+
+(4 Aspect-less Stands, informational: crazy_diamond 100.0%/5.4/36.6,
+gold_experience 100.0%/8.7/64.4, sticky_fingers 100.0%/6.6/49.1,
+hermit_purple 100.0%/4.2/0.0.)
+
+**Next (13l):** hierophant_green/hermit_purple's 0.0 mean-damage-taken
+rows are QA-005/007/018's family (Long-Range corner-parking), not new —
+13l's existing z-axis/AI-interception batch already covers it. No new
+work generated by this sub-phase beyond QA-031's boundary note.
+
+`npm run validate` and `npm run assert` both pass (validate confirms "16
+Aspects" independently of this report's count).

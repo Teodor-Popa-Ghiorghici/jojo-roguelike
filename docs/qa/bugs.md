@@ -964,6 +964,113 @@ which is a frame-pipeline change. No observable effect on play.
 
 ---
 
+### QA-029 — none found — all 16 Stand x Aspect configs, plus the 4
+### Aspect-less Stands, complete a full run every time
+
+**Repro:** `node apps/standbattle/scripts/qa_matrix.js --seeds=15` (new
+Phase 13e script, modeled on `qa_run_sweep.js`'s real-flow driver —
+`run_flow.js`/`run_choices.js`, never a parallel sim). Only 4 of the 8
+Stands carry any `ASPECT_LIST` entries (`star_platinum`, `silver_chariot`,
+`hierophant_green`, `killer_queen`, 4 Aspects each = the mission's "16");
+`crazy_diamond`/`gold_experience`/`sticky_fingers`/`hermit_purple` have
+none, so they run with `aspectId: null` instead of being padded to a fake
+count.
+
+**Symptom (absence of one):** 20/20 configs, 15 seeds each (300 runs) —
+**100.0% completion**, zero thrown errors, zero non-finite HP, zero
+`guardExhausted`/`noEdge` terminations. Mean run length 2.3-8.7 node
+visits, mean damage taken 0.0-64.4 HP. The two 0.0-damage-taken rows
+(`hierophant_green` all 4 Aspects, `hermit_purple`) are both Long-Range
+(range 9) Stands — same shape as QA-005/007/012/018's "enemies never move
+in z, retreat AI parks the User safely" family, not a new defect.
+
+**Status:** not a bug — recorded as Phase 13e's item-1 clean baseline.
+`qa_matrix.js` kept as a durable script for future Stand/Aspect additions.
+
+---
+
+### QA-030 — none found — stacking every `onCombatTick selfDamage` relic
+### plus Sheer Heart Attack's own drain resolves death cleanly
+
+**Repro:** ad hoc script (Phase 13e, not checked in — logic below is
+short enough to restate): `buildCombatFromHeader` with `standId:
+'killer_queen'`, `aspectId: 'kq_sheer_heart'` (1 HP/sec, the Aspect QA-016
+already names) and `relics: ['relic_stone_mask', 'relic_overclocked_stand',
+'relic_overload_capacitor', 'relic_headhunter_pact', 'relic_dios_bone',
+'relic_heaven_ascension_toll']` — every `onCombatTick`-hooked `selfDamage`
+relic in the content pool, `relic_stone_mask` being the mission's literal
+"Stone Mask-equivalent" (1 HP/sec, `content/relics/power_risk.js:8-16`).
+Enemy forced `staggered`+`invulnFrames` so it can never land a hit —
+self-damage is provably the only source. Stepped 4000 frames.
+
+**Symptom (absence of one):** clean death at **frame 599**, `finalHp: 0`
+(not negative), `outcome: 'lose'` exactly once (`outcomeFlips: 0`), no
+throw, no non-finite HP, no further frame stepping after death changes
+outcome. Item 3's "confirm death resolves cleanly, no infinite loop" holds
+under the worst stacked-drain build the content pool can produce.
+
+**Status:** not a bug. Separately confirmed by grep that this codebase has
+no "Arrow Shrine"-equivalent (max-HP-reducing) content at all — no `run
+choices.js`/`item_effect_lib.js`/relic path ever assigns
+`maxHp -= …` or otherwise lowers `runState.maxHp`, only `hp` moves — so
+item 3's "every Arrow-Shrine-equivalent item taken" scenario has no
+content to exercise; not invented per the mission's own instruction not to
+add content that isn't there.
+
+---
+
+### QA-031 — S3 — `feedbackPct`'s documented 0.10 floor is unreachable by
+### any Stand the game ships
+
+**Repro:** `stats.js:72-74`: `feedbackPct = clamp(0.70 - 0.065*range, 0.10,
+0.70)`. `data.js`'s 8 Stands span `range: 2` (`star_platinum`,
+`crazy_diamond`) to `range: 9` (`hierophant_green`, `hermit_purple`) — no
+Fragment/Relic/Aspect/Duo anywhere in the content pool (`fragments.js`,
+`relics.js`, `aspects.js`, `content/duos/*.js` — grepped for any write to
+a `range` stat) ever modifies it. `range: 9` resolves to `0.70 - 0.585 =
+0.115`, the closest any Stand gets; the floor requires `range >= 9.23`.
+
+**Symptom:** the mission's "feedbackPct at its clamp floor (0.10)" boundary
+cannot be produced by any in-game build — the floor branch of `stats.js`'s
+`clamp` is dead code under the current roster. Not a defect (nothing
+degenerates, nothing divides by it), just a boundary the mission asked to
+confirm that turns out to not exist. `tetherPx` (`26 * range`) is likewise
+always positive (min 52px at range 2) and `hud.js:177`'s `standDist /
+tetherPx` never risks a zero divisor for the same reason. No "20m
+Radius"/"Rite"-equivalent Aspect exists either (grepped for a separate Stand
+HP pool or untargetable-User flag — the only detachment mechanic is the
+Long-Range Control Scheme's generic `standDetached` flag, already the
+subject of QA-005/007/012/018/025).
+
+**Status:** logged, not fixed — nothing to fix; recorded so 13l does not
+re-derive this boundary and mistake "unreachable" for "untested."
+
+---
+
+### QA-032 — none found — every Duo Fragment's donor pair is producible,
+### and a Disc slot swap cannot leak the overwritten Disc's hooks
+
+**Repro:** enumerated every `requires[].donor` across `content/duos/core.js`
+and `content/duos/extended.js` (20 entries) against the donor set actually
+referenced by `fragments.js`'s donor pool — all 8 donor ids used by
+`DUO_LIST` (`the_world`, `purple_haze`, `sticky_fingers`, `echoes_act3`,
+`red_hot_chili_pepper`, `gold_experience`, `crazy_diamond`,
+`hermit_purple`) are real, ownable donors, and `fragment_offers.js`'s
+`buildDuoCandidates` gates only on `ownedDonorSet(runState)` — no
+unreachable Duo. For Disc swap: `combat.js:88` builds a fresh
+`dispatcher` from `opts.discs` (`Object.values(discsBySlot)`) on every
+`createCombat` call — combat is rebuilt per fight, so overwriting
+`discsBySlot[slot]` before the next fight naturally drops the old Disc's
+hooks with it; there is no persistent dispatcher a stale hook could survive
+in. No "Requiem-elevation" mechanism matching the mission's description
+exists in this codebase — `Requiem` here names a Silver Chariot Aspect
+(`sc_requiem_stance`) and an enemy/boss affix tier, not a slot-elevation
+system — not invented per the mission's instruction.
+
+**Status:** not a bug — items 5 and 6 clean.
+
+---
+
 ## Not reproduced
 
 Nothing from Phase 13d's own matrix failed to reproduce — every finding
