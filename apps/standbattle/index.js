@@ -71,7 +71,12 @@ export default {
       flashEnabled: meta.flashEnabled !== false, reduceParticles: !!meta.reduceParticles
     };
 
-    if (savedRun && savedRun.graph && savedRun.graph.nodes[savedRun.nodeId]) {
+    /* map.js reads graph.nodes/edges/paths unconditionally -- a save whose
+       graph is missing any of those (e.g. hand-edited, or truncated by a
+       storage failure mid-write) must fall through to a fresh run here,
+       not crash drawMap on the first frame it's resumed into. */
+    if (savedRun && savedRun.graph && Array.isArray(savedRun.graph.edges) && Array.isArray(savedRun.graph.paths)
+      && savedRun.graph.nodes[savedRun.nodeId]) {
       /* Resuming mid-run loses at most the node in progress -- combat
          state itself is never persisted, only the map-scene checkpoint. */
       state.runState = savedRun;

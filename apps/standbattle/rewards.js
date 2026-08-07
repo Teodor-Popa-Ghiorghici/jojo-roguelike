@@ -83,7 +83,7 @@ export function drawReward(g, W, H, offer, runState, tsec) {
     y = paragraph(g, frag.levelDesc[cand.level - 1], r.x + 6, y, r.w - 12, { scale: 1, color: '#DCE2FF' });
 
     const owned = runState.fragmentsBySlot[frag.slot];
-    const overwrites = owned && owned.id !== frag.id;
+    const overwrites = owned && owned.id !== frag.id && FRAGMENTS[owned.id];
     if (overwrites) {
       const prevName = FRAGMENTS[owned.id].name;
       paragraph(g, 'OVERWRITES ' + prevName.toUpperCase(), r.x + 6, r.y + r.h - 28, r.w - 12,
@@ -116,7 +116,8 @@ export function pickRewardChoice(mx, my, offer, W) {
    screen, where there's time to read it -- replaces the old RUN_BUFFS
    list that used to occupy this exact corner. */
 export function drawBuildSummary(g, x, y, runState) {
-  const owned = SLOTS.map(slot => ({ slot, frag: runState.fragmentsBySlot[slot] })).filter(e => e.frag);
+  const owned = SLOTS.map(slot => ({ slot, frag: runState.fragmentsBySlot[slot] }))
+    .filter(e => e.frag && FRAGMENTS[e.frag.id]);
   if (!owned.length) return;
   owned.forEach((e, i) => {
     const def = FRAGMENTS[e.frag.id];

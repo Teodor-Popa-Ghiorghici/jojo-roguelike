@@ -155,6 +155,8 @@ export function createWindow(opts) {
   function closeWin() {
     win.remove();
     btn.remove();
+    document.removeEventListener('mousemove', onDocMouseMove);
+    document.removeEventListener('mouseup', onDocMouseUp);
     const i = openWins.indexOf(rec);
     if (i >= 0) openWins.splice(i, 1);
     Snd.close();
@@ -185,7 +187,7 @@ export function createWindow(opts) {
     Snd.grab();
   });
 
-  document.addEventListener('mousemove', ev => {
+  function onDocMouseMove(ev) {
     if (dragging) {
       const r = desk.getBoundingClientRect();
       const maxX = desk.clientWidth  - 40;
@@ -200,13 +202,14 @@ export function createWindow(opts) {
       win.style.width  = nw + 'px';
       win.style.height = nh + 'px';
     }
-  });
-
-  document.addEventListener('mouseup', () => {
+  }
+  function onDocMouseUp() {
     if (dragging || sizing) Snd.drop();
     dragging = false;
     sizing = false;
-  });
+  }
+  document.addEventListener('mousemove', onDocMouseMove);
+  document.addEventListener('mouseup', onDocMouseUp);
 
   raise(win);
   Snd.open();
@@ -239,10 +242,9 @@ export async function openWindow(appId, args = {}) {
       return v ? JSON.parse(v) : null;
     },
     openWindow,
-    close: () => {
-      if (app.unmount) app.unmount();
-      made.close();
-    }
+    // made.close is reassigned below to call app.unmount() itself -- call
+    // through it rather than unmounting here too, or ctx.close() unmounts twice.
+    close: () => { made.close(); }
   };
   
   // Override close behavior to trigger unmount
