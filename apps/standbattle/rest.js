@@ -40,6 +40,13 @@ function choiceRect(i, total, W, H) {
   return { x: Math.round(W / 2 - totalW / 2 + i * (w + gap)), y: H - 76, w, h };
 }
 
+/* QA-060: heal/upgrade/tension can all be `enabled: false` at once (full
+   HP, no upgrade points or every Fragment already maxed, tension already
+   at 5) -- shop.js/archive_stub.js both give the player an always-on way
+   off the screen (LEAVE/CONTINUE); Rest never did, so that combination
+   was a hard screen-trap with no click and no key that did anything. */
+function leaveRect(W, H) { return { x: W / 2 - 60, y: H - 34, w: 120, h: 20 }; }
+
 export function drawRest(g, W, H, runState, choices, tsec) {
   backdrop(g, W, H, tsec || 0);
   g.save(); g.globalAlpha = 0.5; px(g, 0, 0, W, H, '#05060C'); g.restore();
@@ -52,6 +59,7 @@ export function drawRest(g, W, H, runState, choices, tsec) {
     button(g, r, c.label, c.enabled);
     text(g, c.hint, r.x + r.w / 2, r.y + r.h + 3, { scale: 1, align: 'center', color: c.enabled ? '#8A90A8' : '#4A4E5C' });
   });
+  button(g, leaveRect(W, H), 'LEAVE', true);
 }
 
 export function pickRestChoice(mx, my, choices, W, H) {
@@ -61,4 +69,11 @@ export function pickRestChoice(mx, my, choices, W, H) {
     if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) return i;
   }
   return -1;
+}
+
+/* Always hit-testable regardless of `choices` state -- the one
+   guaranteed way out of the Rest screen. */
+export function pickRestLeave(mx, my, W, H) {
+  const r = leaveRect(W, H);
+  return mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h;
 }

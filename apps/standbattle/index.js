@@ -6,7 +6,7 @@
 
 import { drawCombat } from './render.js';
 import { drawMap, pickNode, drawEvent, pickChoice } from './map.js';
-import { drawRest, restChoices, pickRestChoice } from './rest.js';
+import { drawRest, restChoices, pickRestChoice, pickRestLeave } from './rest.js';
 import { drawShop, pickShopAction } from './shop.js';
 import { drawArchiveStub, pickArchiveContinue } from './archive_stub.js';
 import { drawReward, pickRewardChoice } from './rewards.js';
@@ -212,6 +212,7 @@ export default {
         const choices = restChoices(state.runState);
         const idx = pickRestChoice(mx, my, choices, W, H);
         if (idx >= 0) { if (window.Snd) window.Snd.ok(); applyRestChoice(state, choices[idx].id, env); }
+        else if (pickRestLeave(mx, my, W, H)) { if (window.Snd) window.Snd.ok(); commitNode(state, env); }
       } else if (state.scene === 'shop') {
         const action = pickShopAction(mx, my, state.runState, state.shop, W, H);
         if (action) { if (window.Snd) window.Snd.select(); applyShopAction(state, action, env); }
