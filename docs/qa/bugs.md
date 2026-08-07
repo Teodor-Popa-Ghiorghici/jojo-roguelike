@@ -1718,3 +1718,287 @@ frame, and 43 of the 74 cases carry a recorded fixture in
    but the first status authored with a real `onDeath` will silently do
    nothing. Recorded here rather than as a finding because no shipped
    content is affected.
+
+---
+
+## Phase 13g — the window closes
+
+Scope: `mount`/`unmount` lifecycle, save/load/migration, storage growth,
+and the `ctx` boundary, over the standbattle app and the `kernel/wm.js`
+window manager that drives it. Method: static read of index.js/save.js/
+run_flow.js/audio.js/music.js/telemetry.js/kernel/wm.js, direct repro
+scripts against save.js/combat.js in Node, and a Playwright agent driving
+the real app in a real browser for the DOM-instrumented cases (listener/
+timer counts, localStorage dumps across two windows).
+
+### QA-047 — S1 — fixed — mount/unmount race left the frame loop and
+### music engine running forever after a fast window close
+
+**Repro:** `kernel/wm.js`'s `openWindow()` calls `app.mount(made.body,
+ctx, args)` without awaiting it; the close button / `ctx.close()` call
+`app.unmount()` synchronously. `index.js`'s `mount()` is `async` and
+`await`s `saveStore.loadMeta()`/`loadRun()` before touching the DOM/rAF/
+audio. Closing the window during those awaits (or via 20+ open-then-
+immediately-close cycles in a tight loop) left `this._cleanup` unset, so
+`unmount()` no-op'd: the `requestAnimationFrame` loop and `music.js`'s
+`setInterval` kept running against a canvas already removed from the DOM.
+
+**Symptom:** orphaned rAF loop + orphaned music `setInterval`, indefinite
+(confirmed both via manual trace and the Playwright agent's fast-close
+loop before the fix).
+
+**Status:** fixed (`index.js`) — a `this._closed` flag set by `unmount()`
+and checked both right after the awaits and right after `_cleanup` is
+assigned, so a close that lands before setup finishes tears down
+whatever partial state exists instead of leaving it to run forever.
+Verified clean over 25 fast cycles post-fix. **Superseded in scope by
+QA-050 below** — the flag lives on `this`, and `this` turns out to be a
+shared singleton across every window of the app (see QA-050); the fix is
+correct for the single-window case it was built for, not for concurrent
+windows of the same app.
+
+### QA-048 — S1 — fixed — permanent `document` keydown listener leaked
+### on every mount, never removed on unmount
+
+**Repro:** `settings_panel.js`'s `buildRebindPanel()` (called every
+`mount()` via `mountAccessibilityBar`) did
+`document.addEventListener('keydown', ..., true)` and returned no way to
+remove it. Every mount/unmount cycle left one more permanent capturing
+listener on `document`, closing over that mount's now-detached panel/
+input/meta.
+
+**Symptom:** unbounded `document` listener growth, one per mount, holding
+that mount's whole closure alive forever (rebind panel DOM node, `input`,
+`meta`, `saveStore`).
+
+**Status:** fixed — `buildRebindPanel` now returns `destroy()`, wired
+through `mountAccessibilityBar`'s return value into `index.js`'s
+`_cleanup`. Playwright agent confirms 0 net standbattle-owned `document`
+listener growth over a 100x clean sequential mount/unmount loop.
+
+### QA-049 — S1 — fixed — an owned Fragment id missing from content
+### bricked every future combat entry for the rest of the run
+
+**Repro:** `node -e` against `combat.js`'s `createCombat` directly with
+`ownedFragments = [{id: 'frag_does_not_exist', level: 1}]` (any enemy,
+any seed — content-shape bug, not seed-dependent). `combat.js:74`
+called `installFragment(dispatcher, FRAGMENTS[owned.id], owned.level)`
+unguarded; `FRAGMENTS[owned.id]` is `undefined` for an unknown id, and
+`content_registry.js:248`'s `(def.effects || [])` throws
+`TypeError: Cannot read properties of undefined (reading 'effects')`
+before `createCombat` returns. Since `fragmentsBySlot` is read on *every*
+combat entry for the whole run (not once), one stale id bricks the run
+permanently the moment any node is clicked.
+
+**Status:** fixed — `combat.js:74` now guards like its sibling relic/
+duo/disc installs three lines below it already did (`if (def)
+installFragment(...)`). Confirmed pre-fix crash and post-fix clean
+construction via direct repro script.
+
+### QA-050 — S1 — logged, not fixed — the app object is a module
+### singleton shared by every window of the app; per-instance mount state
+### (QA-047's fix included) cannot be made correct without a contract change
+
+**Repro (Playwright, two windows):** open standbattle window A, let it
+mount fully; open window B, let it mount fully; close A via its titlebar
+X. Result: A's rAF loop/ResizeObserver/listeners are never released —
+leaked forever — while B's rebind-panel `document` keydown listener is
+silently removed instead (confirmed by identity-tagging each closure:
+`survivorIsA: true, survivorIsB: false` after closing A).
+
+**Repro (single window, rapid cycling):** 5 back-to-back fast
+open+close-X cycles with no settling time between them leave 5
+accumulated `raf` handles and 5 orphaned `keydown` listeners once things
+settle, because each new `mount()` resets the shared `this._closed =
+false`, un-bailing a *previous* already-closed mount's still-pending
+awaits, which then builds a full UI into an already-detached DOM node
+with no path left to ever tear it down.
+
+**Root cause:** `kernel/registry.js`'s dynamic import is module-cached,
+so `kernel/wm.js:223`'s `const app = mod.default` is the *same* object
+for every `openWindow('standbattle')` call. CLAUDE.md's app contract —
+`mount(root, ctx)` / `unmount()`, no instance handle passed to either —
+has no way to express "which window" inside `unmount()`, so QA-047's
+`this._closed`/`this._cleanup` (and any per-instance state an app could
+put on `this`) is unavoidably shared across concurrent windows of the
+same app. `music.js`'s module-level `running`/`bus`/`timerId` (QA-051)
+is the same root cause in a different file.
+
+**Why not fixed here:** every fix considered changes the contract, not
+just this file's behavior. Tracking multiple `{closed, cleanup}` records
+instead of one doesn't help — `unmount()` still receives no argument
+identifying which window closed, so there is no correct rule for which
+record to tear down (LIFO picks the wrong one in the exact two-window
+repro above). A correct fix needs `wm.js` to hand `mount()` (and
+`unmount()`) a per-window instance token, which is a change to the app
+contract itself — precisely the kind of change the mission brief asks to
+stop and write up rather than patch under a hardening pass. Scope for a
+future phase: thread an instance identity through `openWindow`/`mount`/
+`unmount`, and audit every app for `this.`-scoped mount state the same
+grep this phase used on standbattle would catch.
+
+### QA-051 — S2 — logged, not fixed — `music.js`'s module-level audio
+### state is shared across concurrent windows of the same app
+
+**Repro:** open two standbattle windows; `musicStart()` on the second
+no-ops because `running` is already `true` from the first (module-level,
+not per-instance) — the second window's `musicSetIntensity` calls become
+no-ops against a bus it doesn't own. Close either window: `unmount()` ->
+`musicStop()` unconditionally kills the shared `bus`/`timerId` for
+*both* windows — the surviving window goes silent.
+
+**Status:** not fixed — same root cause as QA-050 (no per-instance
+identity available to `mount`/`unmount`); a real fix means giving the
+music engine per-instance state, which needs the same contract change.
+Folded into QA-050's writeup rather than treated as independent, since a
+standalone fix here would just be a different flavor of the same
+un-addressable sharing bug.
+
+### QA-052 — S1 — logged, not fixed — concurrent windows can silently
+### revert each other's meta/Archive writes
+
+**Repro (Playwright, two windows + localStorage dump):** open window A,
+toggle SHAKE (writes `meta` with `shakeEnabled:false`). Open window B
+*before* A's toggle if testing the worse case, or independently — B
+loaded its own `meta` snapshot at its own mount time. B toggles
+PARTICLES and saves. Dumping `localStorage['app_standbattle_meta']`
+before/after: A's `shakeEnabled:false` is reverted back to `true` by B's
+save, because `save.js:128`'s `saveMeta(data)` always writes B's entire
+stale in-memory snapshot, not just the field B actually changed. The
+same mechanism reverts Archive purchases, Fate totals, Bond progress, or
+Mission completions made in one window if any other open window saves
+afterward with an older in-memory copy of those fields.
+
+**Status:** not fixed. The mission brief's "last-write-wins is
+acceptable, silent Archive loss is not" describes exactly this failure
+mode as the one that must not happen. A shallow merge against the
+on-disk copy at save time does **not** fix it — every top-level key
+exists in both the disk copy and the saving window's snapshot, so a
+merge still picks the (possibly stale) value from whichever window saves
+last for every field, not just the one it meant to change. A correct fix
+needs either per-field dirty-tracking (know which keys a given
+`saveMeta` call actually intends to change vs. carries along stale) or a
+transactional/patch-based save API replacing "load whole blob, mutate in
+place, save whole blob" everywhere meta is touched — both are a design
+change to `save.js`'s contract with its ~15+ call sites across the app,
+not a one-file hardening patch. Flagged for a future phase; until then,
+players who keep two windows of this app open risk silently losing
+Archive/Fate/Mission/Bond progress with no error shown.
+
+### QA-053 — S1 — fixed — `migrate()` trusted a future-version save's
+### shape instead of falling back
+
+**Repro:** `save.js`'s `migrate(entry, migrations, targetVersion,
+fallback)` only walked forward `while (version < targetVersion)`; a save
+whose `version` is *greater* than the target (a save from a newer build,
+or a tampered/corrupted version field — e.g. `{version: 99, data:
+{seed: 'future'}}`) skipped the loop entirely and returned `data`
+verbatim instead of falling back, unlike every other unmigratable-version
+case (`if (!step) return fallback`). Confirmed via a direct `node -e`
+harness against `createSaveStore` with an in-memory fake `ctx`: pre-fix,
+a v99 run save loaded as-is; post-fix, it falls back to `null` (fresh
+run) exactly like a v2 run save already correctly does.
+
+**Status:** fixed — `migrate()` now checks `version > targetVersion` and
+falls back immediately, before the walk. `meta`'s independent migration
+table gets the same guard for free (shared `migrate()`). Re-verified: a
+current-version (`v3`) save still loads unchanged.
+
+### QA-054 — S1 — fixed — unknown Fragment id crashed the map's
+### per-frame render loop indefinitely (distinct from QA-049)
+
+**Repro (Playwright agent, unit-level):** build a real run via
+`run_flow.js`, set `fragmentsBySlot[SLOTS[0]] = {id: 'FAKE_ID', level:
+1}`, call `drawBuildSummary` (`rewards.js:118`, invoked every frame from
+`map.js:197` while on the map scene) -> `TypeError: Cannot read
+properties of undefined (reading 'name')` at the old `rewards.js:123`.
+Unlike QA-049 (which bricks the *next combat entry*), this crashes the
+*current* frame's render call every single frame once a tampered/
+corrupted save with a bad fragment id reaches the map screen — a frozen
+screen, forever, with no combat needed to trigger it. A second unguarded
+site at the old `rewards.js:88` (`FRAGMENTS[owned.id].name` in the
+reward-card "OVERWRITES" label) has the same shape.
+
+**Status:** fixed — both sites now guard on `FRAGMENTS[id]` existing
+(`rewards.js`), matching the pattern already used at `run_end.js:50`,
+`mission_tracker.js:67`, and (post-QA-049) `combat.js:74`.
+
+### QA-055 — S2 — fixed — resume guard checked `graph.nodes` but not
+### `graph.edges`/`graph.paths`, which `drawMap` also reads unconditionally
+
+**Repro:** a run save with a structurally incomplete `graph` (real
+`nodes`, missing `edges`/`paths` — e.g. truncated by a storage failure
+mid-write) passed `index.js`'s old resume guard
+(`savedRun.graph.nodes[savedRun.nodeId]`) and then crashed
+`map.js:143`'s `graph.edges.filter(...)` on the first resumed frame,
+every frame, same failure mode as QA-054.
+
+**Status:** fixed — `index.js`'s resume guard now also requires
+`Array.isArray(savedRun.graph.edges)` and `Array.isArray(savedRun.graph.paths)`
+before resuming; anything short of that falls through to a fresh run,
+same as an unparseable save already did.
+
+### QA-056 — S2 — fixed — every window leaked two permanent `document`
+### listeners on close (kernel-level, not standbattle-specific)
+
+**Repro (Playwright, 100x clean mount/unmount loop):** `document`
+listener count grew by exactly 201 (≈2×100+1) over 100 clean standbattle
+open/close cycles even with QA-047/048 fixed, because the leak is in
+`kernel/wm.js`'s `createWindow()` (used by every window: apps, sysDialog,
+askName), not in the app. `createWindow()` adds
+`document.addEventListener('mousemove'/'mouseup', ...)` for window drag/
+resize and never removes either on `closeWin()`.
+
+**Status:** fixed — both handlers named and removed in `closeWin()`.
+This affects every window the shell creates, not just standbattle;
+flagging here since it's exactly the class of bug this phase's
+instrumentation was built to catch, and standbattle's own
+mount/unmount-loop assertion (QA-048's verification) would otherwise
+never reach a true zero baseline regardless of app-level correctness.
+
+### QA-057 — S3 — fixed — `ctx.close()` unmounted the app twice
+
+**Repro:** `kernel/wm.js`'s `openWindow()` built `ctx.close` to call
+`app.unmount()` then `made.close()` — but `made.close` was reassigned
+three lines later to a version that *also* calls `app.unmount()` before
+`oldClose()`. Since `ctx.close`'s closure reads `made.close` at call
+time (after the reassignment), calling `ctx.close()` unmounted the app
+twice. Harmless today only because standbattle's `unmount()` is
+idempotent by accident (`_cleanup` nulled after first call), not by any
+contract guarantee — nothing stops a future app's `unmount()` from
+double-freeing a resource.
+
+**Status:** fixed — `ctx.close` now just calls `made.close()`, which
+already does both unmount and the actual window teardown.
+
+### QA-058 — S2 — logged, not fixed — telemetry has no cap or rotation
+
+**Repro:** grepped all of `apps/standbattle/` for `MAX_`/`rotat`/`trim`/
+`slice` near telemetry code — none. `telemetry.js`'s `appendRunSummary`
+does a full read + string-concat + full rewrite of
+`standbattle/telemetry.jsonl` on every run end; cost and storage grow
+linearly, unbounded, with total lifetime run count. `kernel/vfs.js`'s
+`fs.write` has no quota handling of its own either.
+
+**Status:** not fixed — deciding a retention policy (cap by line count?
+by age? rotate to a second file?) is a product decision, not a hardening
+patch. The one part of this that *was* a plain defensive gap — a
+quota-exceeded `ctx.fs.write` rejecting into `run_flow_combat_end.js`'s
+unawaited call site as an unhandled promise rejection — is fixed
+(`telemetry.js` now catches the write). The unbounded-growth question
+itself is unresolved and belongs in front of whoever owns storage
+budget for this shell.
+
+### QA-059 — none found — corruption handling for the `run` key is
+### solid as designed
+
+Truncated/malformed JSON, `{"version":3,"data":{}}` (valid JSON, current
+version, missing fields), and `{"version":99,...}` (pre-QA-053) all fail
+closed correctly through `save.js`'s per-blob try/catch: zero console
+errors beyond the caught one, the `meta` blob untouched in every case,
+the game falling back to hub/fresh-run. `loadRun`/`loadMeta`'s
+independent-try/catch design (Phase 0) works exactly as documented.
+
+**Repro:** Playwright agent, direct `localStorage` manipulation of
+`app_standbattle_run` before reload, all four payloads above.
+
