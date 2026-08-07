@@ -1,4 +1,4 @@
-/* npm run fuzz -- --runs=N --seed=S [--profile=weighted|mash|idle]
+/* npm run fuzz -- --runs=N --seed=S [--profile=weighted|mash|idle|spatial]
    Headless random-input agent (Phase 13a deliverable 3/4). Drives
    combat.setKey with weighted-random inputs (biased toward realistic
    action frequencies) plus two explicit stress profiles -- mash (every
@@ -6,7 +6,15 @@
    of invariants every simulated frame. Prints at most 20 lines on
    success; on any violation it prints only the seed, run profile,
    violated invariant and frame -- that seed is a ready-made bug-list
-   entry (docs/qa/bugs.md), not something to paste a transcript for. */
+   entry (docs/qa/bugs.md), not something to paste a transcript for.
+
+   Phase 13c adds `spatial`: not random at all -- a cycle of SCRIPTED
+   corner/wall/tether/knockback/z-extreme scenarios (below), because a
+   uniform-random agent almost never spends enough consecutive frames
+   pinned in a corner to expose a clamp-ordering bug. Reuses this same
+   file's checkInvariants (bounds/NaN/stuck-detector) unchanged -- the
+   spatial profile is a different *input* policy, not a different
+   monitor. */
 
 import { ENEMIES, BOSSES } from '../data.js';
 import { buildCombatFromHeader, checksumFrame } from '../replay.js';
@@ -38,6 +46,79 @@ const TARGETS = [
 ].filter(t => t.def);
 
 const PROFILES = ['weighted', 'mash', 'idle'];
+
+/* ---- spatial profile (Phase 13c) -- deliberate corner/wall/tether/
+   knockback/z-extreme driving, test matrix items 1/2/4/5/7 ---- */
+
+const CORNERS = [
+  { left: true, forward: true },  // x-min, z-min
+  { left: false, forward: true }, // x-max, z-min (right held below)
+  { left: true, forward: false }, // x-min, z-max (back held below)
+  { left: false, forward: false } // x-max, z-max
+];
+
+function cornerKeys(combat, corner) {
+  combat.setKey('left', corner.left);
+  combat.setKey('right', !corner.left);
+  combat.setKey('forward', corner.forward);
+  combat.setKey('back', !corner.forward);
+}
+
+/* Drive into a corner, then hammer Project (held, toggled, and driven
+   further into the wall/diagonally OOB) right at the wall -- matrix #1/#2:
+   Project in every direction incl. into/through walls, Project+walk,
+   Step into corner while Projecting, release Project mid-drag. */
+function spatialCornerProject(combat, f, corner) {
+  cornerKeys(combat, corner);
+  const t = f % 180;
+  combat.setKey('project', t < 150); // held most of the window, released for a stretch (mid-drag release)
+  if (t >= 60 && t < 90) { combat.setKey('dodge', true); combat.setKey('dodge', false); } // Step attempt while Projecting (should be denied, never a crash)
+}
+
+/* Sit still exactly at a corner (matrix #4): knockback/launch at every
+   arena edge from whatever the AI throws, plus attacks of our own so a
+   Clash counter-knockback can also land at the wall. */
+function spatialCornerKnockback(combat, f, corner) {
+  cornerKeys(combat, corner);
+  const t = f % 40;
+  combat.setKey('left', corner.left && t < 20);
+  combat.setKey('right', !corner.left && t < 20);
+  combat.setKey('forward', corner.forward && t < 20);
+  combat.setKey('back', !corner.forward && t < 20);
+  if (t === 25) { combat.setKey('heavy', true); }
+  if (t === 26) { combat.setKey('heavy', false); }
+  if (t === 30) { combat.setKey('parry', true); }
+  if (t === 31) { combat.setKey('parry', false); }
+}
+
+/* z-axis extremes (matrix #5): slam forward/back repeatedly, Projecting
+   through part of it so the Stand's own z-clamp gets stressed too. */
+function spatialZAxis(combat, f) {
+  const t = f % 120;
+  combat.setKey('forward', t < 60);
+  combat.setKey('back', t >= 60);
+  combat.setKey('left', false); combat.setKey('right', false);
+  combat.setKey('project', t % 40 < 20);
+}
+
+/* Long-Range retreat AI into a corner (matrix #7): drive the Stand (which
+   is what movement keys control under 'long') straight into a corner so
+   the User's own retreat AI has to run its away-from-nearest-enemy logic
+   right at the wall, plus periodic 'command' presses (reposition-to-Stand)
+   so that order can't become a permanent no-op. */
+function spatialLongRetreat(combat, f, corner) {
+  cornerKeys(combat, corner);
+  if (f % 90 === 0) { combat.setKey('command', true); }
+  if (f % 90 === 1) { combat.setKey('command', false); }
+}
+
+const SPATIAL_SCENARIOS = [
+  { fn: spatialCornerProject, standId: 'star_platinum' }, // Close-Range, held-Project class
+  { fn: spatialCornerKnockback, standId: 'star_platinum' },
+  { fn: spatialZAxis, standId: 'star_platinum' },
+  { fn: spatialCornerProject, standId: 'sticky_fingers' }, // Mid-Range, flicked-Project class
+  { fn: spatialLongRetreat, standId: 'hierophant_green' }  // Long-Range, retreat-AI class
+];
 
 /* Weighted: movement most frames, a light/medium tap every ~20 frames,
    heavier/utility actions rarer, held toggles occasionally flipped -- not
@@ -114,14 +195,15 @@ function checkInvariants(combat, stuckState) {
   return violations;
 }
 
-function runOne(seed, target, profile) {
-  const header = { seed, enemyId: target.id, standId: 'star_platinum' };
+function runOne(seed, target, profile, spatial) {
+  const header = { seed, enemyId: target.id, standId: (spatial && spatial.standId) || 'star_platinum' };
   const combat = buildCombatFromHeader(header);
   const rng = mulberry32((seed.length * 2654435761) >>> 0);
   const stuckState = { prev: new Map(), stillSince: 0 };
   let lastFrame = 0;
   for (let f = 0; f < FRAME_CAP && combat.outcome === 'fighting'; f++) {
-    if (profile === 'weighted') weightedFrame(combat, rng);
+    if (profile === 'spatial') spatial.fn(combat, f, spatial.corner);
+    else if (profile === 'weighted') weightedFrame(combat, rng);
     else if (profile === 'mash') mashFrame(combat);
     else idleFrame(combat);
     combat.step();
@@ -142,7 +224,12 @@ for (let i = 0; i < RUNS; i++) {
   const target = TARGETS[i % TARGETS.length];
   const profile = FORCED_PROFILE || PROFILES[i % 10 < 7 ? 0 : (i % 10 < 8 ? 1 : 2)]; // ~70% weighted, ~10% mash, ~20% idle
   const seed = `${BASE_SEED}-${i}`;
-  const result = runOne(seed, target, profile);
+  let spatial = null;
+  if (profile === 'spatial') {
+    const scenario = SPATIAL_SCENARIOS[i % SPATIAL_SCENARIOS.length];
+    spatial = { fn: scenario.fn, standId: scenario.standId, corner: CORNERS[i % CORNERS.length] };
+  }
+  const result = runOne(seed, target, profile, spatial);
   if (result) failures.push(result);
 }
 

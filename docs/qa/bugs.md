@@ -149,6 +149,135 @@ mission's test matrix.
 
 ---
 
+### QA-005 — S2 — Long-Range retreat AI can park the User at an arena
+### z-extreme where melee enemies structurally cannot connect
+
+**Repro:** `npm run fuzz -- --runs=20 --profile=spatial` (seed `fuzz-14`,
+target `knife_thug`, standId `hierophant_green` — Long-Range), also `fuzz-4`
+(`yuya_fungami`, same scheme). Deterministic replay:
+`docs/qa/replays/qa005-long-retreat-corner-freeze.json`. Also reproduces
+directly through shipped content, no fuzz needed: build a fight on
+`data_encounters.js`'s `ENCOUNTERS.shopping_street_pinned` (the actual
+"Pinned" encounter objective, GDD §15) with any Stand and hold
+left+forward the whole `pinnedFrames` window (2400f) — replay:
+`docs/qa/replays/qa005-pinned-objective-corner-safe.json`.
+
+**Symptom:** `stand_classes.js`'s `longStepUser` (retreat AI, ~lines
+153-189) picks "away from nearest enemy" purely in x/z with no z-bound
+awareness, and `moveEntity`'s ARENA_Z clamp then pins the User at
+`ARENA_Z_MIN`/`ARENA_Z_MAX` once it gets there and has nowhere further to
+retreat. `combat_enemy.js`'s enemy `z` is set once at spawn
+(`encounter.js`'s `spawnPosition`) and is never written again by any AI
+state — melee patterns' hit test (`hitbox.js`'s `MELEE_DEPTH_TOLERANCE`,
+22 units) then permanently fails once the User's z and the enemy's spawn z
+differ by more than that, which a z-extreme corner reliably does (spawn z
+clusters within ±26 of `Z_REST`=130; `ARENA_Z_MAX`=220 is 64+ units away).
+Verified directly through the Pinned encounter: the objective's own stated
+intent is "trapped and forced into Long-Range for a window" (GDD §15) —
+observed result is the User takes **zero damage** for the entire
+2400-frame pinned window (`qa005-pinned-objective-corner-safe.json`'s
+final: `playerHp: 100` through frame 2400, only dropping once
+`forceControlScheme` lifts and the AI reverts). The retreat "downside"
+inverts into guaranteed safety.
+
+**Frame:** corner reached ~200 (fuzz-14), static/no-damage confirmed
+through frame 1200+ (replay) and through the full 2400f pinned window
+(Pinned replay).
+
+**Status:** logged, not fixed. Not run-ending (the player isn't stuck —
+they still have full Stand-attack input and can end the fight; nothing
+crashes or requires a restart), so not S1 under this phase's rule. A
+correct fix needs either z-aware enemy AI or z-aware retreat-AI cornering
+logic — both are AI-system design changes, not a narrow behavior fix in
+one file. Flagged for Phase 13l.
+
+---
+
+### QA-006 — S2 — Mid/Long-Range's Strain drag doesn't actually bound
+### tether overextension when the far side has continuous movement authority
+
+**Repro:** `npm run fuzz -- --runs=20 --profile=spatial` — Mid-Range:
+seed `fuzz-8` (`formaggio`, standId `sticky_fingers`), also `fuzz-3`,
+`fuzz-13`, `fuzz-18`; Long-Range: seed `fuzz-9` (`illuso`, standId
+`hierophant_green`), also `fuzz-19`. Replays:
+`docs/qa/replays/qa006-mid-flick-tether-unbounded.json`,
+`docs/qa/replays/qa006-long-tether-unbounded.json`.
+
+**Symptom:** `stand_classes.js`'s `midUpdateStand` (~lines 102-125)
+freezes the Stand at a `flickTargetX/Z` computed once, on the Project
+key-edge, for the whole `MID_FLICK_DURATION_FRAMES` (150f/2.5s) — unlike
+`closeUpdateStand`'s per-frame `PROJECT_MAX_OVEREXTEND` (1.4x) clamp,
+nothing re-checks this position against the tether OR the arena bounds
+while flicked (`stand.x = stand.flickTargetX` has no `clamp()` call at
+all, the only positioning assignment in the file that doesn't). Mid-Range
+also never roots the User (`midStepUser` — "the User keeps mobility" per
+its own comment), so held movement input away from the frozen Stand
+outraces `combat_stand.js`'s shared Strain drag
+(`STRAIN_DRAG_FACTOR`=0.4, i.e. 40% of move speed) every single frame:
+observed tether distance grew from 106.9px (flick start) past the fuzz
+monitor's Close-shaped 1.4x reference (146.6px) by frame 18, to 162.7px by
+frame 24, continuing to grow for the rest of the hold. Long-Range shows
+the same root cause in its base case (no flick needed): the Stand is
+player-driven by movement keys while the User is independently AI-driven
+by `longStepUser`, so the two routinely diverge past any 1.4x-shaped
+reference with nothing capping it — by design for Long-Range's
+"permanently detached" class per the file's own header, but the header
+also claims Mid/Long "get dragged/penalized the same generic way" as
+Close's hard clamp, which the code does not actually deliver for either
+class once one side has continuous independent movement. The Mid-Range
+flick's *un-clamped-to-ARENA* freeze (separate from the tether-ratio
+question) is confirmed by code inspection but a full natural-play
+out-of-bounds repro needs a narrow timing window (facing toward a wall
+while the tracked enemy is still nearer to it than the User) that this
+phase's scripted runs didn't happen to hit — flagged for 13l to reproduce
+directly rather than reported as "found" without a frame number.
+
+**Frame:** 18-19 onward (Mid, tether-ratio breach), continuing through at
+least frame 122 before the flick auto-retracts; 72 onward (Long).
+
+**Status:** logged, not fixed. Not run-ending. A fix means either capping
+the flicked position every frame (a Mid-Range behavior change) or rooting
+the User during a flick/adding a hard Long-Range cap — both real changes
+to a Stand Class's design, not a narrow one-file fix. Flagged for Phase
+13l, same batch as QA-001 (same file, same "Strain vs. clamp" seam).
+
+---
+
+### QA-007 — S2 — z-extreme parking causes a mutual whiff stalemate against
+### any melee-only enemy, under any Stand Class
+
+**Repro:** `npm run fuzz -- --runs=20 --profile=spatial` (seed `fuzz-6`,
+target `ndoul`, standId `star_platinum` — Close-Range, plain player-held
+input, no AI involved). Replay:
+`docs/qa/replays/qa007-z-extreme-mutual-whiff.json`.
+
+**Symptom:** holding `back` (or `forward`) continuously walks the User to
+`ARENA_Z_MAX`/`MIN` under ordinary Close-Range control (no AI, no
+Project) — the same z-fixed-enemy gap QA-005 hits via the retreat AI, but
+here purely from direct player input. Once there, `hitbox.js`'s
+`overlaps()`/`pointOverlaps()` depth check fails for **both** directions:
+the enemy's melee patterns can't reach the User (as in QA-005) and the
+User's own attacks can't reach the enemy either (their hitbox is the
+Stand's, which for Close-Range rides right next to the User at the same
+z). Confirmed over the full 3600-frame fuzz cap: `playerHp` and `enemyHp`
+both static the entire run (`100` / `170`), tripping the fuzz monitor's
+own stuck-detector at frame 3561 (900f — 15s — with zero HP change or
+>2px movement on any entity).
+
+**Status:** logged, not fixed, and explicitly **not** a true softlock —
+the player retains full input; walking back toward the enemy's z resolves
+it immediately (untested here only because the script never releases the
+held key). No automatic mechanic corrects it, though, and no enemy (melee
+or the ranged/homing patterns in `combat_enemy.js`, which also only ever
+adjust `dir` in x) ever re-aligns z on its own — worth 13l knowing this is
+a standing property of the sim, not a one-off. Root cause overlaps
+QA-005's (enemies never move in z after spawn); logged separately since
+it's reachable without any AI/retreat scheme involved and needs its own
+fix surface (arguably: nothing to fix here at all, since the player is
+never actually trapped — 13l should make that call).
+
+---
+
 ## Not reproduced
 
 None this sub-phase — every fuzz/replay finding above reproduced on first
