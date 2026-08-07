@@ -310,6 +310,15 @@ whether a non-holder could still attack.
 **Frame:** 50 (seed `gatecheck-1`); reproduces on every crowd encounter and
 every seed tried.
 
+**Severity note (stated, not stretched):** this is not run-ending under the
+ledger's literal parenthetical — nothing crashes, softlocks or corrupts a
+save. It is graded S1 because it is the total functional failure of the
+system this sub-phase exists to validate, and because every crowd
+measurement 13e onward would take is meaningless while the gate is inert. It
+was fixed on discovery rather than batched to 13l on that basis, and because
+the fix is two lines restoring documented behaviour. If 13l prefers the
+strict reading, re-grade it S2 — the fix stands either way.
+
 **Status:** **FIXED.** `combat_enemy.js:101` now passes `!!(...)`, and
 `ai.js`'s gate is `if (canCommit != null && !canCommit)` so the documented
 "omitted/undefined behaves as true" contract still holds for a caller that
@@ -575,13 +584,413 @@ that batch.
 
 ---
 
+### QA-016 — S2 — Bites the Dust silently fails to rewind for any death
+### latched after `stepCrowd`, including a shipped Aspect's periodic cost
+
+**Repro:** seed `btd-tickonly`, `ENCOUNTERS.budogaoka_bites_the_dust`,
+`standId: 'star_platinum'`, `aspectId: 'kq_sheer_heart'`, with the lone
+`knife_thug` held in `staggered` every frame so the Aspect's own 1 HP/sec
+`onCombatTick` `selfDamage` (`aspects.js:153`) is provably the only damage
+source. Result: `outcome: 'lose'` at **frame 6000**, `btdUsed: false`, with
+**20 snapshots banked and unused**. Two narrower confirmations of the same
+mechanism: seed `btd-B` (player HP set to 0 at the top of frame 200 →
+no rewind, lose at **frame 201**) and seed `btd-dot-virus` (a `virus`
+damage-over-time tick as the killer → no rewind, lose at **frame 243**).
+Control: seed `btd-A` (ordinary enemy melee kill) **does** rewind, at
+frame 607.
+
+**Symptom:** `rule_fights_2.js:91` triggers the rewind only when its
+`onTick` observes `combat.outcome === 'lose'`. `onTick` runs inside
+`stepEncounter` → `stepCrowd`, and `combat.js`'s `stepFrame` opens with
+`if (combat.outcome !== 'fighting') return;` — so a frame that *starts*
+already lost never reaches `onTick` again. Only deaths latched **during**
+`stepCrowd` (an enemy's landed hit, via `combat_defense.js`/
+`combat_stand.js`) are seen. Every damage source that resolves *after*
+`stepCrowd` in the same frame is invisible to it: `stepHazards`,
+`stepStatuses` damage-over-time, the `onCombatTick` dispatch, and the
+end-of-frame `if (player.hp <= 0 ...) combat.outcome = 'lose'` at
+`combat.js:254`. The Rule Fight's entire signature — "death rewinds 20s" —
+silently does not happen and the run ends.
+
+Reachable with shipped content only, no fuzzing required: `kq_sheer_heart`
+and `kq_bites_the_dust` are both Killer Queen Aspects (`aspects.js`), so the
+player most likely to meet this Rule Fight is exactly the one who can carry
+a periodic HP cost into it.
+
+**Frame:** 6000 (seed `btd-tickonly`); 201 (`btd-B`); 243 (`btd-dot-virus`).
+
+**Status:** logged, not fixed. Every candidate fix moves *when* the outcome
+is observed relative to the frame pipeline — re-checking `outcome` after
+`stepHazards`/`stepStatuses`, or giving the rewind its own hook at the
+bottom of `stepFrame` — which is a change to `combat.js`'s per-frame
+sequence, i.e. a design change to the frame pipeline rather than a behaviour
+fix inside one file. Same class as QA-001, and it belongs in the same 13l
+step-ordering batch.
+
+---
+
+### QA-017 — S2 — the Bomber cannot damage a stationary player from any
+### position on the map
+
+**Repro:** `node apps/standbattle/scripts/qa_ai_pathing.js --only=bomber
+--verbose` (seed `qapath`). 0 damage across 11/11 player positions and 37/37
+depth samples over 2400 frames each, despite 26-28 *committed* attacks per
+run. Hazard first visible at **frame 239** (seed `qapath:bomber:centre`) at
+`distPlayer→hazard = 88.7` against a hazard radius of 55.
+
+**Symptom:** `ai.js:191-194`'s `defaultApproachRange` filters ranged
+patterns out before taking a minimum, so a *pure*-ranged kit falls through
+to `MELEE_MAX_RANGE = 110` (`ai.js:168`) and `combat_enemy.js:97` halts the
+enemy there. `bomb_plant` then travels only ~20 units (40px/s ÷ 60 × 30
+activeFrames) and leaves a 55-radius hazard, so the bomb always detonates
+~89 units from the player — outside its own blast. The authored
+`range: 90` would not close the gap either; it needs ≤75. The Bomber is
+therefore an enemy type that structurally cannot deal damage.
+
+**Frame:** 239 (seed `qapath:bomber:centre`), and every subsequent plant.
+
+**Status:** logged, not fixed. Reconciling `defaultApproachRange` with
+pure-ranged kits changes how every ranged enemy chooses its standoff
+distance — an AI-tuning decision, not a one-file behaviour fix. Currently
+unreachable in play (QA-010: `bomber` spawns in no shipped encounter). Same
+root cause makes the `spacer` profile not actually space:
+`sniper`/`zoner`/`bomber` all get approachRange 110 while their patterns
+reach 420/360/90, so the sniper closes to melee distance to fire.
+
+---
+
+### QA-018 — S2 — 78% of the depth axis is a permanent safe lane, and all
+### four corners are absolute safe zones
+
+**Repro:** `node apps/standbattle/scripts/qa_ai_pathing.js` (seed `qapath`),
+Section B depth sweep. Across 72 corner runs: **2,585 committed enemy
+attacks, 0 total damage.**
+
+**Symptom:** the quantified consequence of QA-005/QA-007's "enemies never
+move in z after spawn". Measured maximum |player.z − enemy.z| at which a hit
+can still land, against the 180-unit depth axis: 15 melee types **20.1
+units (22% of the axis lethal, 78% a permanent safe lane)**, governed by
+`hitbox.js:10`'s `MELEE_DEPTH_TOLERANCE`; `sniper` 8.6 units (10%);
+`zoner` 8.6-40.1 units seed-dependent — the only type that partly escapes,
+because `hazards.js:55` uses true 2D distance rather than the depth
+tolerance; `bomber` 0% (QA-017). **0 of 18 enemy types can damage the player
+from all 7 tested positions.**
+
+Also measured, and shipped-reachable: `LEASH_RANGE = 90`
+(`combat_enemy.js:22`) anchored at `encounter.js:28`'s `spawnX = 602` floors
+a Leashed enemy at x = 512 in an arena spanning 58-662, so it can never
+threaten a player left of x ≈ 438 — **63% of the arena width**. All 18
+types orbit forever at both x-min corners. This is not QA-only: `angelo`
+is `baseType: 'elite'` and rolls affixes on every spawn, and seed
+`qapath:angelo:nw` rolled `fortified + leashed` → orbit at min |dx| = 456
+for the full 2400 frames, 7 telegraphs, 0 damage. Seed-dependent by design
+(`--seed=alt7` does not roll it).
+
+**Frame:** leash floor reached ~290 and held to 2400 (seed
+`qapath:morioh_thug:nw:leash`).
+
+**Status:** logged, not fixed — same 13l batch as QA-005/QA-007/QA-012, all
+one "enemies have no z-axis and no interception" family. Explicitly **not a
+softlock**: `encounter.js:32-34`'s only win condition is `killAll`, so the
+player must approach regardless; nothing traps them.
+
+---
+
+### QA-019 — S3 — melee patterns commit at any distance ("phantom
+### telegraphs"), which also masks genuine commit starvation
+
+**Repro:** seed `qapath:morioh_thug:nw:leash` — melee windups begin at
+**frames 347 (sweep), 1142, 1723 and 1842**, each with |dx| = 454.5 against
+an `approachRange` of 84.
+
+**Symptom:** `ai.js:234`'s `rng.random() < 0.002` escape hatch fires
+regardless of distance, and `ai.js:175`'s pattern filter keeps any pattern
+with `range <= 110` eligible whatever `dist` is — so an enemy that cannot
+close (leashed, or halted by its approach range) still telegraphs and swings
+at empty air roughly every 500 frames. Cosmetically this reads as broken AI;
+functionally it also means the NO-COMMIT stuck-state class can never
+trigger, so a real commit starvation would be masked by the same escape.
+
+**Frame:** 347 (first occurrence, seed above).
+
+**Status:** logged, not fixed. Gating the escape on distance changes when
+enemies attack at all, which is a pacing design call for 13l.
+
+---
+
+### QA-020 — S3 — a hit routed to the Stand never fires `onDamageTaken`,
+### hiding ~71% of incoming damage from that hook
+
+**Repro:** `node apps/standbattle/scripts/qa_ai_pathing.js --only=sniper
+--verbose` (seed `qapath`) — solo sniper at arena centre: 20 Stand-routed
+hits vs 8 direct User hits, i.e. 71% of that fight's incoming damage never
+reaches an `onDamageTaken` listener.
+
+**Symptom:** `combat_stand.js:129-130`'s `applyFeedbackDamage` fires
+`onFeedbackDamage` and then `applyHit` directly, while the User path fires
+`onDamageTaken` (`combat_defense.js:139`). Any Fragment/Relic/affix worded
+as "when you take damage…" therefore silently does not fire for feedback
+damage, even though the player's HP dropped.
+
+**Frame:** n/a — steady-state over the 2400-frame run.
+
+**Status:** logged, not fixed, and flagged as a **design question rather
+than a confirmed defect**: a separate `onFeedbackDamage` hook exists, so the
+split may be deliberate. 13l should decide whether `onDamageTaken` is meant
+to mean "the User's HP fell" (in which case the feedback path must also fire
+it) or "the User's own body was struck" (in which case this is correct and
+the content wording needs auditing instead).
+
+---
+
+### QA-021 — S2 — an enemy killed by a status tick skips the entire death
+### pipeline: `onKill` never fires and `deathTimer` stays 0
+
+**Repro:** `node apps/standbattle/scripts/qa_ai_interrupts.js`, seed
+`qa13d-6dot`, **frame 121** — enemy killed by a damage-over-time tick fires
+`onKill` **0 times** with `deathTimer = 0`; the control (an identical kill
+from a landed hit) fires it once and sets `deathTimer = 53`.
+
+**Symptom:** `status.js:126`'s `applyDot` calls `fighter.js:120`'s
+`applyDamage` directly, but `onKill` is dispatched only from
+`combat_player.js:193` and `combat_defense.js:87` — the two landed-hit
+paths. So every on-kill mechanic silently does not fire for a
+status-damage kill: the Bomber's `explodeOnDeath`, the Enraged-on-Kill
+affix, combo/momentum grants, and `mission_counters.js`'s kill counters. The
+zero `deathTimer` also skips the death animation entirely.
+
+**Frame:** 121 (seed `qa13d-6dot`).
+
+**Status:** logged, not fixed. The fix is a shared kill choke point that
+both damage paths route through — a real refactor of where death is
+detected, not a one-file behaviour fix. Flagged for 13l; note it likely
+also explains any future "my on-kill Fragment sometimes doesn't proc"
+report.
+
+---
+
+### QA-022 — S2 — a dead enemy's in-flight projectiles freeze in place,
+### stay rendered, and never detonate their authored hazard
+
+**Repro:** solo encounter per type, seeds `orphan-sniper` / `orphan-zoner` /
+`orphan-bomber`: set `enemy.hp = 0` on the first frame `enemy.projectiles`
+is non-empty (**frames 235 / 233 / 210** respectively), then step 400 more
+frames. Each still has **1 entry in `enemy.projectiles`**, frozen at its
+kill-frame x (280.0 / 284.2 / 288.1), and **0 hazards** were ever spawned.
+Also reproduces through the scripted harness: `node
+apps/standbattle/scripts/qa_ai_interrupts.js`, seed `qa13d-6c-haz-bomber`,
+**frame 55** — a Bomber killed mid-`active` with its hazard projectile
+airborne produces 0 hazards where the control run produces 2.
+
+**Symptom:** `combat_enemy.js:59-63` returns early for `hp <= 0`, before the
+projectile loop at `:119` — so a dead enemy's projectiles stop being
+stepped, spliced, or expired. They are never removed from the array, and
+`arena.js:200` draws them with no `hp > 0` guard, so they hang in mid-air
+for the rest of the fight. The same early return skips `:131-134`'s
+`pr.life <= 0 → spawnHazard` branch, so Phase 6's authored "a pursuit that
+times out without connecting still detonates" rule is silently cancelled by
+killing the owner.
+
+**Frame:** 134 / 212 / 235 / 55 (seeds above).
+
+**Status:** logged, not fixed. Continuing to step a dead enemy's
+projectiles changes who owns them and when a fight is really over — an
+ownership/lifetime design call, not a behaviour fix. Unreachable in shipped
+play today (QA-010: none of the three ranged types spawn).
+
+---
+
+### QA-023 — S2 — a summoner poise-broken on its summon frame still summons
+
+**Repro:** `node apps/standbattle/scripts/qa_ai_interrupts.js`, seed
+`qa13d-6e-caller`, **frame 820** — a `caller` poise-broken on the exact
+frame `summonTimer` reaches 0 spawns anyway (alive summons 2 → 3).
+
+**Symptom:** `combat_enemy.js:98` calls `stepSummon` after `stepPoise`, but
+`summons.js:47`'s `stepSummon` has no stagger or poise-broken guard at all —
+it only checks `def.summon` and `hp <= 0`. This is exactly the interrupt
+the mission's item 6 names ("stagger of a summoner mid-summon"), and it does
+not interrupt. Killing the Caller outright *does* stop it (the `hp <= 0`
+check), so only the stagger case fails.
+
+**Frame:** 820 (seed `qa13d-6e-caller`).
+
+**Status:** logged, not fixed. Adding a stagger guard changes what a poise
+break is *for* on a summoner class — a real design decision about whether
+summons are interruptible, which the GDD does not settle. Flagged for 13l.
+Unreachable in shipped play today (QA-010: no summoner spawns).
+
+---
+
+### QA-024 — S2 — a boss staggered into a phase transition stays staggered
+### more than twice as long, at ×1.5 damage throughout
+
+**Repro:** `node apps/standbattle/scripts/qa_ai_interrupts.js`, seed
+`qa13d-7-staggered-killer_queen`, **frame 42** — `killer_queen` remains
+staggered for **76 frames** against `STAGGER_FRAMES = 36`, taking
+`STAGGER_DAMAGE_MULT` (×1.5) for the whole time.
+
+**Symptom:** `combat_enemy.js:76`'s `if (enemy.invulnFrames > 0) { ...
+return; }` returns before `stepEnemyAI`, so `ai.timer` — the stagger clock —
+is frozen for the 30-frame phase invulnerability plus the transition's
+160 ms hitstop. The stagger does not tick down while the boss is invulnerable
+and then resumes, so a player who poise-breaks a boss right at a phase
+threshold gets a free punish window more than twice the authored length.
+Not a softlock; it self-resolves.
+
+**Frame:** 42 (seed above); reproduces on every boss with `phases`.
+
+**Status:** logged, not fixed. Ticking status/stagger clocks during
+invulnerability is a frame-pipeline ordering change (same family as
+QA-001/QA-016), not a one-file fix. Verified separately that the transition
+itself is correct: **all 10 bosses walk `[0,1,2]` with no skip and no
+repeat**, correct `patternIds` and `invulnFrames` set at each step, even
+when a single catastrophic hit drops HP from full to below the last
+threshold (seeds `phase-<bossId>`).
+
+---
+
+### QA-025 — S2 — Yellow Temperance is mathematically unwinnable for
+### Long-Range, and Illuso's Mirror has no player agency for Mid or Long
+
+**Repro:** `node apps/standbattle/scripts/qa_rule_fights.js` (seed `rf`).
+Both numbers below are **policy-independent** — they are ceilings and
+uptimes measured under forced conditions, not the outcome of a scripted
+bot, deliberately so: a win/lose cell only measures the driver's skill.
+Yellow Temperance trade ceiling, boss parked in `recover`, heavy only:
+close **20.89 dmg per 6 self-damage (3.48×)**, self-cost 30 of 100 HP; mid
+**15.38 per 6 (2.56×)**, self-cost 42; long **5.81 per 6 (0.97×)**,
+self-cost **102 HP against a 100 HP pool** — i.e. the player provably runs
+out of health before the boss does, whatever the player does. Illuso's
+Mirror, 1440 sustained frames holding `project` on the boss's layer: close
+window 100% with **600 projecting frames**; mid 56% with **0**; long 53%
+with **0**.
+
+**Symptom:** two independent Stand-Class blind spots in `rule_fights*.js`.
+`rule_fights_2.js:20`'s flat `YT_CONTACT_DMG = 6` per landed hitbox is not
+scaled by the attacker's damage output, so Long-Range's −35% baseline
+(`stand_classes.js:194`, `damageMult: 0.65`) drops the exchange below 1:1
+and the player provably dies first. `rule_fights.js:74` gates mirror
+vulnerability on `combat.player.projecting`, which only Close-Range ever
+sets (`stand_classes.js:53`) — Mid uses `stand.flicked` and Long is always
+detached — so for those classes the layer toggle is unreachable and the
+fight's stated puzzle ("time your Project across layers") is replaced by
+waiting out a 240-frame timer. Winnable, but agency-free.
+
+**Frame:** YT trade ceiling measured over frames 0-1800 with the boss held
+in `recover`; mirror agency over frames 0-1440.
+
+**Caveat, stated:** the win/lose grid this script also prints is **not**
+evidence and is not cited here. The scripted policy was partly rebuilt after
+the original run was lost, and the rebuilt driver is weaker — it now loses
+several cells the first driver won. The two findings above survive that
+change untouched because neither depends on the driver.
+
+**Status:** logged, not fixed. Both fixes are content/design decisions —
+scale YT's contact damage through a resolver, and re-gate the mirror on the
+generic `player.standDetached` every scheme already sets — and re-gating the
+mirror changes what the fight *is* for two of three classes. Flagged for
+13l.
+
+---
+
+### QA-026 — S2 — Rolling Stones' greed reward latches before any fate
+### damage can tick, so the doubling is free
+
+**Repro:** `node apps/standbattle/scripts/qa_rule_fights.js` — a 3-frame tap
+into the fate zone at **frame 200** sets `combat.rollingStonesGreedy = true`
+with **0 damage taken**.
+
+**Symptom:** `rule_fights_2.js:57-60` sets the greed flag on the first frame
+the player is inside `FATE_RADIUS`, but the damage it is supposed to trade
+against only lands when `encounter.fateTick` counts 20 consecutive frames
+down (`:61-64`). Stepping in for three frames and out again buys the
+promised reward doubling (`run_flow.js`'s reward step reads the flag) at
+zero cost, so GDD's "lethal but doubles rewards" greed check has no downside
+at all. All three Stand classes show `GREEDY` with a 100% win rate.
+
+**Frame:** 200 (seed `rf`).
+
+**Status:** logged, not fixed — moving the flag to the first damage tick is
+a one-line change but it changes the objective's payout economics, which is
+a balance decision for 13l, not a hardening fix.
+
+---
+
+### QA-027 — S3 — Bites the Dust leaves the player input-locked for 170
+### frames after its own rewind
+
+**Repro:** `node apps/standbattle/scripts/qa_rule_fights.js` — seed `rf`,
+rewind fires at **frame 1121**, after which `player.state === 'dead'`
+persists until **frame 1291** (170 frames, 2.8 s) and is cleared only by the
+player being hit again.
+
+**Symptom:** `rule_fights_2.js:94-101` restores HP, position and
+`combat.outcome`, but nothing resets `player.state`, and
+`combat_player.js`'s state machine has no branch that exits `'dead'` — it
+was written on the assumption death is terminal. The signature payoff of
+the Rule Fight therefore hands control back ~3 seconds late, in the middle
+of the fight that just killed you.
+
+**Frame:** 1121 → 1291 (seed `rf`).
+
+**Status:** logged, not fixed. Belongs with QA-016 — same Rule Fight, same
+"resurrection was never modelled as a state" root cause, same 13l batch.
+
+---
+
+### QA-028 — S3 — a token slot points at a corpse for the remainder of the
+### frame in which its holder dies
+
+**Repro:** `node apps/standbattle/scripts/qa_ai_interrupts.js`, seed
+`qa13d-6c-brute-active`, **frame 258** — end-of-frame assertion finds melee
+slot 1 still holding an enemy with `hp <= 0`.
+
+**Symptom:** `combat_crowd.js:15` runs `stepTokens` at the *top* of
+`stepCrowd`, so a holder that dies later in the same frame — during another
+enemy's step, or during `updatePlayer`'s own hitboxes — is not noticed until
+the next frame's `stepTokens` releases it (QA-009's fix, `token.js`'s
+`canHoldAttackToken` check). The stale reference lasts exactly one frame and
+self-corrects; nothing reads a dead holder in between, because the gate is
+`enemy.hasToken` on the enemy, not the slot's back-pointer.
+
+**Frame:** 258 (seed above); the same shape on any seed where a token holder
+dies mid-frame.
+
+**Status:** logged, not fixed — and recorded mainly so 13l does not mistake
+this for a QA-009 regression. It is the same one-frame ordering class as
+QA-001: fixing it means re-running the token step after damage resolution,
+which is a frame-pipeline change. No observable effect on play.
+
+---
+
 ## Not reproduced
 
 Nothing from Phase 13d's own matrix failed to reproduce — every finding
-above replays from its logged seed. Two items are recorded as **untested
-rather than clean**, and 13l should not read them as verified: the Crowded
-`TOKEN_MELEE_COUNT` scaling (`combat.js:46`) is documented-unimplemented and
-so was measured, not exercised; and `hazardSet`-style per-arena position
-mechanics remain unwired (already noted in `phase-13c.md`), so "can it path
-around hazards" reduces to the single static damage-zone, which Phase 13c
-already covered.
+above replays from its logged seed. Four items are recorded as **untested
+rather than clean**, and 13l must not read them as verified:
+
+1. **Three of the mission's four named stuck-state classes are structurally
+   unreachable under an idle player, so `0/198` is not evidence of
+   correctness.** Wall-press, oscillation and no-commit cannot occur when
+   the enemy always spawns right of the player at x = 602, only ever moves
+   toward `player.x`, and halts `approachRange` short
+   (`combat_enemy.js:91-97`): it can never touch a wall, and its per-frame
+   dx sign can never flip without knockback. Exercising those three needs a
+   moving/attacking player, which this sub-phase's idle-first matrix
+   excludes. (No-commit is additionally masked by QA-019.)
+2. **Crowded's `TOKEN_MELEE_COUNT` scaling** (`combat.js:46`, still 2 and
+   still commented "not implemented yet") was measured at Crowded rank 3,
+   not exercised — there is nothing there to exercise.
+3. **Per-arena position mechanics** remain unwired (`phase-13c.md`), and
+   `arena_bounds.js`'s bounds are global constants with no per-arena
+   override, so "each arena" collapses to one rectangle and "pathing around
+   hazards" collapses to the single static damage-zone Phase 13c covered.
+   Stated plainly rather than reported as 12 clean per-arena runs.
+4. **QA-016's shipped-content reachability** is proven for one route (a
+   Killer Queen Aspect's periodic cost) but the hazard and
+   status-damage-over-time routes into that same fight were confirmed only
+   by directly applying the status, not by reaching it through natural play —
+   `rollAffixes` (`affixes.js:124`) returns `[]` for any non-elite enemy
+   regardless of Menace rank, so the Toxic-affix route I first assumed does
+   **not** exist for `budogaoka_bites_the_dust`'s lone `knife_thug`.
