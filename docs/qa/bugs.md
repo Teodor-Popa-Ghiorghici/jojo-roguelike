@@ -2200,3 +2200,277 @@ current (Phase 10) content volume — GDD §20's "under 8 seconds" rule is
 about click count (title -> hub -> LAUNCH is two clicks, `launch()`
 does everything synchronously per `index.js:162`'s own comment), and
 compute cost is nowhere near a bottleneck.
+
+## Phase 13i — how it looks and sounds
+
+Scope: the pixel/render pipeline, juice/effect stacking, particle caps,
+per-character palette distinctness, telegraph legibility, and the audio
+graph (SFX/music buses, vocal barks, intensity transitions). Method:
+grep-assertion of the pixel rules across every render file; two real
+headless stress runs (12-enemy simultaneous crowd death, 120s continuous
+combo) via `createCombat`/`createFx`/`createJuice` directly; a
+synthetic Playwright harness importing `combat.js`/`render.js` to freeze
+and capture every telegraph and every character/enemy/boss sprite; and a
+static extraction of every palette ramp/tint in `palette.js`/
+`cga_palette.js`/`data_enemies.js`/`data_bosses.js`.
+
+### QA-067 — none found — pixel rasterizer/CSS/shake invariants all hold
+
+**Repro:** grep across `apps/standbattle/*.js` for `.fill(`, `.stroke(`,
+`ctx.rotate`, `.arc(`, `.bezierCurveTo`, `.quadraticCurveTo` — the only
+hits are two comments in `draw.js:4,56` explaining *why* the rasterizer
+avoids them, no live call. `imageSmoothingEnabled = false` is set on all
+three canvas contexts that exist (`index.js:111`, `layer.js:27,47`).
+`draw.js`'s base `px()` primitive (`draw.js:14-17`) and every other
+primitive (`draw.js:33-213`) round every coordinate/dimension with
+`Math.round`/`Math.floor`/`Math.ceil` before any `fillRect` call — no
+sub-pixel geometry reaches the canvas anywhere. `.gamecv` (shared with
+every app, `kernel/theme.css:740-746`) sets `image-rendering: pixelated`
+on the canvas element; `index.js:117-119`'s scale is
+`Math.max(1, Math.floor(...))`, always an integer. `juice.js:60-61`
+rounds `shakeX`/`shakeY` with `Math.round` before they're used as a
+`g.translate` in `render.js:193`.
+
+**Status:** no regression across twelve phases of additions; nothing to
+fix.
+
+### QA-068 — none found — screen-wide fx stay `solo` under a 12-enemy
+### simultaneous chain-detonation
+
+**Repro:** `node` harness building a 12-enemy crowd via `createCombat`
+and landing `sp_ora_rush` on all of them stacked in one hitbox, seed
+`qa-fx-stack-001`, frame 9 — 12 simultaneous `onKill` dispatches, each
+queuing its own `flash`+`burstBg`. Static check: the only two files that
+ever call `fx.spawn` are `arena.js`/`fx_wire.js`; every screen-filling
+type (`'flash'`: 5 call sites, `'burstBg'`: 4 call sites, all on
+onParrySuccess/onKill/onPhaseTransition/onPurge/onPartExposed) passes a
+`solo` key (`'flash'`/`'burst'` respectively) consistently. Content
+(Fragments/affixes/Relics) never calls `fx.spawn` directly, only
+`effect_lib.js` verbs, so no loadout can add an unscoped screen-wide
+spawn.
+
+**Symptom (none):** observed max simultaneous `flash` entries in
+`fx.list` = 1, max `burstBg` = 1, at frame 9 of the seed above — the
+`solo` eviction (`fx.js:36-48`) collapses the 12-way simultaneous spawn
+correctly.
+
+**Status:** confirmed healthy, no regression.
+
+### QA-069 — none found — particle hard cap clips correctly under
+### worst-case simultaneous crowd death
+
+**Repro:** same seed `qa-fx-stack-001`, frame 9 — each of the 12 deaths
+calls `combat.juice.spawnBurst(..., 18, ...)` (`combat_player.js:166`),
+216 particles requested in one frame. `juice.js` has exactly one
+`particles.push` site (`spawnBurst`, `juice.js:41`), unconditionally
+guarded by `this.particles.length < PARTICLE_CAP` in the spawn loop
+(`juice.js:38`) — no other code path appends.
+
+**Symptom (none):** `juice.particles.length` peaked at exactly
+`PARTICLE_CAP` (140), never higher, at frame 9.
+
+**Status:** confirmed healthy, no regression.
+
+### QA-070 — none found — music intensity/boss-phase transitions never
+### click or double-trigger
+
+**Repro:** read of `music.js`'s `musicSetIntensity`/`scheduleStep`.
+`musicSetIntensity(level)` is a bare variable read only by
+`scheduleStep()` at the next 1/16-step boundary — it never touches an
+in-flight oscillator, so there is no "layer" object to double-trigger.
+Every tonal note (`noteOsc`) and `kick()` ramp via
+`exponentialRampToValueAtTime`; `hat()`'s one hard `gain.value=` is a
+legitimate percussive noise-burst whose buffer itself tapers to 0, not a
+bug. The only other non-ramped assignment is `bus.gain.value = 0` at
+`musicStart()` (silence before anything plays). Boss-phase/combat/
+tension transitions (driven every frame from `index.js:266`) are
+idempotent reassignments of the same read-only level.
+
+**Status:** confirmed healthy across every transition point, no
+regression.
+
+### QA-071 — S2 — logged, not fixed — SFX gain knob doesn't apply live
+### after the audio context first wakes
+
+**Repro:** turn the SFX knob after the first click anywhere in the OS
+(which calls `Snd.wake()`).
+
+**Symptom:** `kernel/snd.js:13-16` sets `Snd.sfx.gain.value = sfxGain()`
+exactly once, inside `wake()`, guarded by `if (!this.sfx)` — the only
+write site in the repo. `wirePot('pot-sfx', ...)` (`kernel/hardware.js:
+276`) only does `CRT.sfx = v; saveCRT()`, nothing calls back into
+`snd.js` to update the live gain node. Every `tone()`/`noise()` call
+only checks `Vol.sfx <= 0` as an on/off gate, so playback volume stays
+frozen at whatever `CRT.sfx` was at the moment of the first wake — only
+crossing zero mutes/unmutes, turning the knob has no other audible
+effect. Affects every app's SFX, not just Stand Battle Arena's, since
+`snd.js`/`hardware.js` are shared kernel infrastructure.
+
+**Status:** not fixed — `kernel/` is outside this app's boundary and
+outside this phase's fix budget; batched to 13l. Suggested fix for the
+maintainer: `wirePot`'s SFX callback should call a new
+`Snd.setSfxGain(v)` doing `this.sfx.gain.setTargetAtTime(sfxGain(), ...)`
+(mirroring how `music.js` polls MUS every 40ms), or poll the same way.
+
+### QA-072 — S2 — logged, not fixed — vocal "ORA" bark fires on every
+### hit for the rest of an encounter past combo 9, no frequency cap
+
+**Repro:** 120s of continuous light-attack mashing against a durable
+target, seed `qa-bark-rate-001` — 188 hits landed, 180 "ORA ORA ORA"
+barks spawned (exactly `hits - 8`).
+
+**Symptom:** `combat_player.js:163`'s `player.comboCount++` increments on
+every landed hit and is never reset anywhere in the codebase (zero
+`comboCount = 0` sites outside fighter creation, confirmed by repo-wide
+grep) — it's a monotonic per-encounter hit counter, not a consecutive
+combo. `fx_wire.js:35`'s bark trigger,
+`if (ev.combo === 3 || ev.combo === 6 || ev.combo >= 9)`, means once 9
+hits have landed, every subsequent hit for the rest of the encounter
+re-fires the bark — ≈1.5 barks/sec sustained, thousands of re-triggers
+over a 35-minute run. The display itself is `solo`-scoped
+(`fx_wire.js:37`, `solo: 'bark'`) so only one bark ever renders at once,
+but that's not a rate limiter — no audio vocal-bark path exists
+separately from this text-bark system (confirmed: `audio.js` has no
+spoken/bark synthesis, only tone/noise SFX). GDD §12 calls for
+"frequency-capped so it doesn't become grating over a 25-40 min run."
+
+**Status:** not fixed — the correct repair (should `comboCount`
+decay/reset on whiff/idle matching the `===3`/`===6` tier pattern's
+evident intent, or should `>=9` become a one-shot `===9`?) is a design
+decision about combo semantics that also feeds `hud.js`/`pose_player.js`
+energy/aura reads, not a same-behavior patch; batched to 13l.
+
+### QA-073 — S2 — logged, not fixed — 7 of 8 playable Stands render
+### pixel-identical to Star Platinum once manifested
+
+**Repro:** contact sheet, every playable Stand, every background,
+native + upscaled (`apps/standbattle/scripts/_qa_character_sheet.html`,
+untracked).
+
+**Symptom:** `render.js`'s `drawStand` always calls `drawStar` (Star
+Platinum's exact geometry + `STAR` ramp) for every Stand, with a
+manifest-fade tint `alpha = 0.18 * (1 - manifest)` that hits 0 once
+fully materialized. Silver Chariot, Hierophant Green, Crazy Diamond,
+Gold Experience, Sticky Fingers, Hermit Purple, and playable Killer
+Queen are all the identical purple/teal Star Platinum silhouette for the
+majority of every fight; `moves_silver_chariot.js`/
+`moves_hierophant_green.js` contain zero color values, confirming no
+sprite art exists for these Stands. Spec §11's own example ("Hierophant
+Green's green/purple") is unmet. The brief materialize-tint hues
+(Crazy Diamond `#B7A0FF`, Hermit Purple `#A64FD0`) also sit close to
+Star Platinum's own rim/light steps (`#AC85E8`/`#8355C6`, redmean
+distance 37.1/36.9) even during that narrow window.
+
+**Status:** not fixed — this is missing sprite art, a content/art task
+outside a behavior-preserving hardening patch; batched to 13l.
+
+### QA-074 — S2 — logged, not fixed — 9 of 10 bosses and several
+### crowd-enemy tint groups render indistinguishably from each other
+
+**Repro:** contact sheet + palette table
+(`_qa_character_sheet.html`/`_qa_palette_report.html`, both untracked).
+
+**Symptom:** `render.js`'s `ENEMY_ART = { morioh_thug: drawThug,
+angelo: drawAngelo }` — every other boss id (Fungami, Hol Horse, N'Doul,
+DIO, Formaggio, Illuso, Diavolo, Funny Valentine, Pucci) falls through to
+`drawThug` with no `tint` field in `data_bosses.js` (zero matches on
+grep), rendering as the exact same brown-jacketed Delinquent as each
+other and as the basic crowd enemy. Killer Queen is the only boss with
+bespoke art (`drawKillerQueen`). Separately, among the 14 tinted crowd
+types in `data_enemies.js`, five groups share an identical `PAL` tint
+composited over the identical `THUG_BUILD` silhouette, truly
+indistinguishable rather than just close: `warden`/`shielder`
+(`PAL.blue`), `knife_thug`/`sniper` (`PAL.lcyan`),
+`hound`/`bomber`/`illuso_mirror` (`PAL.lmagenta`),
+`puppeteer`/`puppet_minion`/`leech` (`PAL.green`),
+`duelist`/`valentine_parallel` (`PAL.lred`) — several are gameplay
+opposites (tank vs. flanker vs. ranged) that can appear in the same
+crowd per their role tags, with only the HUD's small `shortName` label
+to tell them apart mid-fight.
+
+**Status:** not fixed — missing boss art plus a tint-reassignment pass
+across enemy data is a content change, not a same-behavior patch;
+batched to 13l.
+
+### QA-075 — S2 — logged, not fixed — `bomb_plant`'s telegraph glyph is
+### `ring` instead of `crosshair` despite being a ranged pattern
+
+**Repro:** telegraph contact sheet
+(`apps/standbattle/scripts/_qa_telegraph_sheet.html`, untracked),
+Bomber's `bomb_plant` cell.
+
+**Symptom:** `ai.js:100`'s own convention comment states "ring = sweep,
+chevron = slam, crosshair = ranged." Every other pattern with `ranged`
+semantics uses `glyph: 'crosshair'` (15 sites in `ai.js`, e.g.
+`ai.js:55,83,89,103,129,135,149`). `bomb_plant` (`ai.js:94-96`) is
+placed like every other ranged/AoE-placement pattern but is authored
+with `glyph: 'ring'` — a colour-blind or fast-reacting player reads it as
+a light melee sweep instead of an incoming ranged placement.
+
+**Status:** not fixed — one-line data change
+(`ai.js:96` `glyph: 'ring'` -> `'crosshair'`), trivial and low-risk, but
+S2 findings are logged and batched to 13l per this phase's fix budget,
+not fixed on discovery.
+
+### QA-076 — S3 — logged, not fixed — three non-hazard ranged
+### telegraphs (`projectile`/`sniper_shot`/`emperor_curveshot`) flood
+### the ground like a full hazard zone
+
+**Repro:** telegraph contact sheet (`_qa_telegraph_sheet.html`), those
+three cells.
+
+**Symptom:** `arena.js:138`'s `telegraphOne` sizes the ground
+ellipse+ring directly off `ai.pattern.range` (`arena.js:142,144`) for
+every pattern, with no check for `pattern.hazard` — patterns that place
+a lingering hazard zone (`zone_denial`, `bomb_plant`) are meant to read
+that way, but `projectile`/`sniper_shot`/`emperor_curveshot` are single
+traveling shots with no `hazard` field and a large `range` (400/420/
+420px), so their ground ellipse covers nearly the entire visible arena
+floor, reading as "the whole floor is dangerous" rather than "a shot is
+incoming."
+
+**Status:** not fixed — batched to 13l alongside QA-075 (same file,
+same telegraph-authoring pass).
+
+### QA-077 — S3 — logged, not fixed — Pucci's `made_in_heaven_
+### acceleration` telegraph reuses plain UI white
+
+**Repro:** telegraph contact sheet (`_qa_telegraph_sheet.html`), Pucci's
+cell.
+
+**Symptom:** `ai.js:162`'s telegraph color is `#FFFFFF`, the same hue
+already used for ordinary UI/hit-flash text elsewhere, not a reserved
+attack-specific colour. Reads fine against the dark alley background
+captured in the sheet; not yet checked against the brighter
+`store`/`park` scenes.
+
+**Status:** not fixed, batched to 13l.
+
+### QA-078 — S3 — logged, not fixed — Thug's and Angelo's jacket
+### palettes are too close for a crowd that can contain both
+
+**Repro:** palette report (`_qa_palette_report.html`, untracked),
+redmean distance computation.
+
+**Symptom:** Delinquent/Thug jacket base `#472C16` vs. Angelo (Elite)
+coat base `#45452F` — redmean distance 64.9, both dark muted brown/
+olive, and `sprite_enemy.js`'s own header comment confirms these two
+co-appear as Morioh's "rank and file." Distinguishable mainly by
+silhouette (stocky+pompadour vs. gaunt+hunched), not colour, at native
+resolution in a fast crowd fight.
+
+**Status:** not fixed, tagged for the same content/tint pass as QA-074;
+batched to 13l. Other borderline pairs checked (Jotaro coat vs. Star
+Platinum body, Sticky Fingers tint vs. Star Platinum teal, Thug vs.
+Killer Queen black) are tagged BALANCE — same hue family but adequately
+separated in lightness/saturation, or low practical co-occurrence.
+
+**Tools:** two throwaway Node repro scripts (`qa_fx_stack.mjs`,
+`qa_bark_rate.mjs`) and a throwaway Playwright contact-sheet harness,
+all deleted after use per this phase's context-discipline rule — nothing
+left in `apps/standbattle/` except the two untracked `_qa_*.html`
+review artifacts and the palette report, none committed.
+`npm run validate`/`npm run assert` stayed green throughout; no code was
+modified this phase (every real finding needs either a design decision
+or a content pass, both out of the S1-only fix budget — see each
+entry's Status).
