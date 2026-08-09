@@ -7,6 +7,7 @@
    failure. --verbose prints every individual assertion. */
 
 import { checkTelegraphFairness, checkTelegraphFairnessAtMenace } from '../fairness_check.js';
+import { runTelegraphGeometryChecks } from './qa_telegraph_geometry.js';
 import { runEncounterChecks } from '../encounter_check.js';
 import { runFragmentChecks } from '../fragment_check.js';
 import { runMapChecks } from '../map_check.js';
@@ -32,6 +33,19 @@ const groups = [];
     name: r.label, pass: r.pass,
     items: r.pass ? [{ label: `worst telegraph ${r.worst.ms.toFixed(0)}ms (${r.worst.id})`, ok: true }]
       : r.failures.map(f => ({ label: f, ok: false }))
+  });
+}
+{
+  /* Phase 13i: the other half of "no damage source may be unreactable" --
+     the floor above measures telegraph TIME and reads no geometry at all,
+     which is exactly how a telegraph that drew none of the sim's three hit
+     geometries survived to ship. This one probes hitbox.js/hazards.js by
+     brute force and fails if the drawn footprint stops short of (or
+     wildly overshoots) the hitbox that will actually resolve. */
+  const { pass, checks } = runTelegraphGeometryChecks();
+  groups.push({
+    name: 'telegraph geometry == resolving hitbox (melee AABB / projectile lane / zone radius)',
+    pass, items: checks.map(c => ({ label: c.label + ' — ' + c.detail, ok: c.ok }))
   });
 }
 {

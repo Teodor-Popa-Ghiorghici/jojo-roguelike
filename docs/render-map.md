@@ -42,6 +42,16 @@ for art. On top of that:
 - `arena.js` — attack telegraphs, projectiles, particles and the
   render-only reactions (swing arcs, footfall dust, stagger scuffs) that
   watch combat state without the simulation knowing they exist.
+- `telegraph_geom.js` — the danger footprint a telegraph draws, derived
+  from the same numbers the hit test resolves with: melee gets
+  `hitbox.js`'s forward AABB (reach + 15 tolerance, ±22 depth, nothing
+  behind the attacker), ranged gets the projectile's own lane (±10 at the
+  shooter's z, length = `projectileSpeed/SIM_HZ × activeFrames`, plus the
+  detonation zone a `hazard` pattern leaves), zones get the true radial
+  radius projected through `Z_TO_Y_SCALE`. The windup animates the fill,
+  never the boundary, so the drawn edge is honest on every frame.
+  `scripts/qa_telegraph_geometry.js` (in `npm run assert`) probes the real
+  predicates and fails if drawing and hitbox ever drift apart.
 - `render.js` — camera, parallax, sprite stamping (outline + cast shadow +
   scene rim light + squash), HUD.
 

@@ -10,6 +10,7 @@
     "build": "echo 'No build step required'",
     "validate": "node apps/standbattle/scripts/validate.js",
     "assert": "node apps/standbattle/scripts/assert.js",
+    "qa-telegraph": "node apps/standbattle/scripts/qa_telegraph_geometry.js",
     "sweep": "node apps/standbattle/scripts/sweep.js",
     "telemetry-sim": "node apps/standbattle/scripts/telemetry_sim.js",
     "replay": "node apps/standbattle/scripts/replay.js",

@@ -9,6 +9,10 @@ import { text } from './font.js';
 import { FX } from './palette.js';
 import { GROUND_Y } from './constants.js';
 import { zToYOffset } from './render_adapter.js';
+import {
+  telegraphProgress, growthFor, meleeFootprint, rangedLane,
+  paintMelee, paintLane, paintZone, zoneEllipse
+} from './telegraph_geom.js';
 
 /* Transient, render-only reactions to state changes. Keeping them here
    (rather than in combat.js) means the fight simulation never has to
@@ -128,26 +132,39 @@ export function telegraph(g, enemies, camX, tsec) {
   enemies.forEach(enemy => telegraphOne(g, enemy, camX, tsec));
 }
 
+/* Phase 13g fairness fix (S2-A/S2-B/S3-C/S3-D): the footprint is now the
+   hitbox that will actually resolve, not one `range`-radius ellipse for
+   every pattern -- a forward AABB for melee, the projectile's own lane for
+   ranged, the true radius for a zone. All of that geometry (and the
+   painting of it) lives in telegraph_geom.js so this file stays a
+   composition file. The windup now animates the FILL sweeping out, not the
+   boundary, so the drawn edge sits on the real extent every frame instead
+   of topping out at 0.97*range. Colour, glyph, pulsing and the label at
+   k>0.55 are unchanged -- this is a geometry correction, not a restyle. */
 function telegraphOne(g, enemy, camX, tsec) {
   if (enemy.hp <= 0) return;
   const ai = enemy.ai;
-  if (!ai || ai.state !== 'windup' || !ai.pattern) return;
-  const k = 1 - Math.max(0, ai.timer) / ai.pattern.windupFrames;
+  if (!ai || !ai.pattern) return;
+  const p = ai.pattern;
+  /* Melee holds its footprint through the active window (6-10 frames,
+     fading out) -- the old early-out meant the frame the AABB actually
+     resolved had zero telegraph on screen. Ranged hands off to the
+     projectile, which projectiles() below draws for real. */
+  const holding = ai.state === 'active' && !p.ranged;
+  if (ai.state !== 'windup' && !holding) return;
+  const prog = telegraphProgress(ai);
+  const grow = holding ? 1 : growthFor(prog);
+  const fade = holding ? Math.max(0, ai.timer) / Math.max(1, p.activeFrames) : 1;
+  const pulse = (0.35 + 0.45 * Math.abs(Math.sin(tsec * 16))) * fade;
   const x = enemy.x - camX;
   const gy = GROUND_Y + zToYOffset(enemy.z);
-  const r = ai.pattern.range;
-  const pulse = 0.35 + 0.45 * Math.abs(Math.sin(tsec * 16));
-  g.save();
-  g.globalAlpha = pulse * (0.35 + k * 0.5);
-  ellipse(g, x, gy + 2, r * (0.4 + k * 0.6), r * 0.14 + 3, ai.pattern.telegraph);
-  g.globalAlpha = pulse;
-  ring(g, x, gy + 2, r * (0.4 + k * 0.6), 2, ai.pattern.telegraph, 0.26);
-  g.restore();
+  if (p.ranged) paintLane(g, rangedLane(enemy, p, camX, grow), p.telegraph, pulse, tsec, camX);
+  else paintMelee(g, meleeFootprint(enemy, p, camX, grow), p.telegraph, pulse * (0.55 + prog * 0.45));
   const y = gy - 130 - Math.sin(tsec * 12) * 2;
-  drawGlyph(g, ai.pattern.glyph || 'chevron', x, y, tsec, ai.pattern.telegraph);
-  if (k > 0.55) {
-    text(g, ai.pattern.label, x, y - 12, {
-      scale: 1, align: 'center', color: ai.pattern.telegraph, outline: '#1A0A0A'
+  drawGlyph(g, p.glyph || 'chevron', x, y, tsec, p.telegraph);
+  if (prog > 0.55) {
+    text(g, p.label, x, y - 12, {
+      scale: 1, align: 'center', color: p.telegraph, outline: '#1A0A0A'
     });
   }
 }
@@ -180,16 +197,17 @@ export function exposedParts(g, enemies, camX, tsec) {
    pulsing ground ellipse in the same style telegraph() already uses so a
    hazard reads as "part of the same visual language", not a new effect
    type bolted on. */
+/* Phase 13g (S2-B): drawn at the TRUE radius in both axes -- radius in x,
+   radius*Z_TO_Y_SCALE in y, which is exactly hazards.js's radial
+   `hypot(dx, dz) <= radius` projected onto the belt. It used to be drawn
+   at 0.7x in x and (0.22r+3)/0.4 in z, ~70% of the real radius each way,
+   so half the real damage area was an invisible annulus all the way
+   round. Colours/pulse unchanged. */
 export function hazardZones(g, hazards, camX, tsec) {
   hazards.forEach(h => {
-    const x = h.x - camX, gy = GROUND_Y + zToYOffset(h.z);
+    const e = zoneEllipse(h, camX);
     const pulse = 0.4 + 0.35 * Math.abs(Math.sin(tsec * 10 + h.x));
-    g.save();
-    g.globalAlpha = pulse;
-    ellipse(g, x, gy + 2, h.radius * 0.7, h.radius * 0.22 + 3, '#FF55FF');
-    g.globalAlpha = pulse * 0.7;
-    ring(g, x, gy + 2, h.radius * 0.7, 2, '#FFB0FF', 0.3);
-    g.restore();
+    paintZone(g, e.cx, e.cy, h.radius, '#FF55FF', '#FFB0FF', pulse, 1);
   });
 }
 
