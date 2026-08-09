@@ -14,13 +14,16 @@
 
 import { createCombat } from './combat.js';
 import { createRng } from './rng.js';
-import { ENEMIES, BOSSES } from './data.js';
+import { ENEMIES, BOSSES, ENCOUNTERS } from './data.js';
 
 export const CHECKPOINT_INTERVAL = 60; // 1 real second at SIM_HZ
 
 export function buildCombatFromHeader(header) {
-  const rng = createRng(header.seed);
-  const encounterDef = header.encounter || ENEMIES[header.enemyId] || BOSSES[header.enemyId];
+  // Phase 13j: a live-session fight's rng is not fight-0 of its seed --
+  // header.rngResume (createRng's `resumeStreams`) puts every stream back
+  // at the exact position it held when this fight actually started.
+  const rng = createRng(header.seed, header.rngResume);
+  const encounterDef = header.encounter || ENEMIES[header.enemyId] || BOSSES[header.enemyId] || ENCOUNTERS[header.enemyId];
   return createCombat(encounterDef, header.ownedFragments || [], {
     standId: header.standId, aspectId: header.aspectId, menace: header.menace,
     relics: header.relics, duos: header.duos, discs: header.discs,
@@ -142,6 +145,17 @@ export function replayRun(replayData, opts) {
       enemyHp: combat.enemies.reduce((s, e) => s + e.hp, 0)
     }
   };
+}
+
+/* Phase 13j: the one call index.js's render loop needs to make every live
+   fight reproducible -- finishes the recorder attached at combat creation
+   (run_flow.js/training.js) and best-effort writes it to ctx.fs, a no-op
+   if this combat was never wired to a recorder. */
+export function persistLiveReplay(ctx, combat) {
+  if (!combat._replayRecorder) return;
+  const replay = combat._replayRecorder.finish(combat);
+  const path = `standbattle/replays/${replay.header.seed}-${replay.header.node || 'fight'}-${replay.final.frame}.json`;
+  ctx.fs.write(path, JSON.stringify(replay)).catch(() => {});
 }
 
 /* First checkpoint frame where two checkpoint lists disagree, or null if

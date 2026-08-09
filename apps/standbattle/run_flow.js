@@ -28,6 +28,7 @@ import { resolveEncounterBudget, tensionRarityMult } from './tension.js';
 import { createTelemetryCollector, recordOffer, recordTaken, recordTension } from './telemetry.js';
 import { wireCombatAudio, sfxActComplete } from './audio.js';
 import { musicSetIntensity } from './music.js';
+import { createReplayRecorder, attachRecorder } from './replay.js';
 /* Phase 10 meta. Note which side of the firewall each of these sits on:
    createMenaceProfile is Track B and returns nothing but numbers; the meta
    payout itself (settleRun) moved to run_flow_combat_end.js along with
@@ -143,6 +144,19 @@ function startCombatForNode(state, env, node) {
   combat.player.maxHp = rs.maxHp;
   combat.debug = env.debugEnabled;
   wireCombatAudio(combat);
+  /* Phase 13j: replay recording is on for every live-session fight, not
+     just headless/fuzzer ones -- state.runRng.snapshotStreams() (rng.js)
+     freezes each stream's position as of this exact fight, since
+     buildCombatFromHeader replays it isolated from the rest of the run.
+     index.js flushes the finished replay to ctx.fs once the fight settles. */
+  const replayHeader = {
+    seed: rs.seed, rngResume: state.runRng.snapshotStreams(), encounter: target,
+    ownedFragments: owned, standId: rs.standId, aspectId: rs.aspectId, menace,
+    relics: rs.relics, duos: rs.duosOwned, discs: rs.discsBySlot,
+    hpMult: opts.hpMult, speedMult: opts.speedMult, node: node.type, act: rs.act
+  };
+  combat._replayRecorder = createReplayRecorder(replayHeader);
+  attachRecorder(combat, combat._replayRecorder);
   /* Missions observe the fight through hooks.js's read-only `on` form --
      no new sim instrumentation, and nothing here can write combat state
      (invariant 8). Counters live on runState so they span the whole run. */
