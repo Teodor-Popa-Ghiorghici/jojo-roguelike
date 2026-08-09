@@ -27,11 +27,12 @@ import { RELIC_LIST } from './relics.js';
 import { ASPECTS, aspectsForStand, defaultAspectFor } from './aspects.js';
 import { createRng } from './rng.js';
 import { createMenaceProfile } from './meta_menace.js';
+import { createReplayRecorder, attachRecorder } from './replay.js';
 import { px } from './draw.js';
 import { text } from './font.js';
 import { backdrop, frame, backButton, hit, rowList, clampTop, wrap, ROW_H, HUB_TEXT, HUB_DIM, HUB_GOLD, HUB_LINE, HUB_INK } from './hub_ui.js';
 
-const TRAINING_SEED = 'training-room';
+export const TRAINING_SEED = 'training-room';
 
 export const TRAINING_TABS = Object.freeze(['STAND', 'ASPECT', 'FRAGMENTS', 'RELICS', 'OPPONENT']);
 
@@ -112,6 +113,15 @@ export function startTrainingFight(state) {
     relics: state.relics, menace: createMenaceProfile(state.menacePact)
   }, createRng(TRAINING_SEED));
   combat.isTraining = true;
+  // Phase 13j: same recorder wiring startCombatForNode gives a real node --
+  // TRAINING_SEED is fixed and un-resumed (fight 0 of its own seed every
+  // time), so no rngResume snapshot is needed to rebuild it later.
+  const header = {
+    seed: TRAINING_SEED, encounter: target, ownedFragments: state.fragments,
+    standId: state.standId, aspectId: state.aspectId, relics: state.relics, node: 'training'
+  };
+  combat._replayRecorder = createReplayRecorder(header);
+  attachRecorder(combat, combat._replayRecorder);
   return combat;
 }
 

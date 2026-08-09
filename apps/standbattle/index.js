@@ -32,6 +32,8 @@ import { createRng } from './rng.js';
 import { createInputSystem } from './input.js';
 import { mountAccessibilityBar } from './settings_panel.js';
 import { challengeLoadout, dailySeedId, weeklySeedId } from './daily_seed.js';
+import { createPacingCollector, pacingTick, flushPacing } from './pacing.js';
+import { persistLiveReplay } from './replay.js';
 
 const W = 480, H = 270;
 
@@ -59,7 +61,7 @@ export default {
       scene: 'title', runState: null, runRng: null, combat: null,
       currentEvent: null, currentOffer: null, shop: null,
       enteringNodeId: null, combatStartTsec: 0,
-      hub: null, summary: null, trainingCombat: false
+      hub: null, summary: null, trainingCombat: false, pacing: createPacingCollector()
     };
     state.hub = createHubState(meta);
     let shakeEnabled = meta.shakeEnabled !== false;
@@ -119,18 +121,15 @@ export default {
       cv.style.height = (H * scale) + 'px';
     }
     const ro = new ResizeObserver(resize);
-    ro.observe(pane);
-    resize();
+    ro.observe(pane); resize();
 
     function updateShakeBtn() { shakeBtn.textContent = 'SHAKE: ' + (shakeEnabled ? 'ON' : 'OFF'); }
     updateShakeBtn();
     shakeBtn.addEventListener('mousedown', ev => {
       ev.stopPropagation();
-      shakeEnabled = !shakeEnabled;
-      env.shakeEnabled = shakeEnabled;
+      shakeEnabled = !shakeEnabled; env.shakeEnabled = shakeEnabled;
       if (state.combat) state.combat.juice.setShakeEnabled(shakeEnabled);
-      meta.shakeEnabled = shakeEnabled;
-      saveStore.saveMeta(meta);
+      meta.shakeEnabled = shakeEnabled; saveStore.saveMeta(meta);
       updateShakeBtn();
       if (window.Snd) window.Snd.click();
     });
@@ -141,8 +140,7 @@ export default {
     updateDebugBtn();
     debugBtn.addEventListener('mousedown', ev => {
       ev.stopPropagation();
-      debugEnabled = !debugEnabled;
-      env.debugEnabled = debugEnabled;
+      debugEnabled = !debugEnabled; env.debugEnabled = debugEnabled;
       if (state.combat) state.combat.debug = debugEnabled;
       updateDebugBtn();
       if (window.Snd) window.Snd.click();
@@ -257,6 +255,7 @@ export default {
       t0 = now;
       tsec += dt / 1000;
       env.tsec = tsec;
+      pacingTick(ctx, state.pacing, state, tsec);
       if (drawHubScene(g, W, H, state, env, tsec)) { /* hub, its stations, training, TO BE CONTINUED */ }
       else if (state.scene === 'combat') {
         const c = state.combat;
@@ -268,6 +267,7 @@ export default {
           c._announced = true;
           musicSetIntensity(0);
           if (c.outcome === 'win') sfxVictory(); else if (c.outcome !== 'fled') sfxDefeat();
+          persistLiveReplay(ctx, c); // Phase 13j: win/loss/fled alike
         }
         const activeNode = state.runState && state.runState.graph.nodes[state.enteringNodeId];
         drawCombat(g, W, H, c, tsec, dt, activeNode && activeNode.scene);
@@ -289,7 +289,7 @@ export default {
     musicStart();
     musicSetIntensity(0);
 
-    this._cleanup = () => { cancelAnimationFrame(raf); ro.disconnect(); musicStop(); accessibilityBar.destroy(); };
+    this._cleanup = () => { cancelAnimationFrame(raf); ro.disconnect(); musicStop(); accessibilityBar.destroy(); flushPacing(ctx, state.pacing); };
     if (this._closed) { this._cleanup(); this._cleanup = null; }
   },
 

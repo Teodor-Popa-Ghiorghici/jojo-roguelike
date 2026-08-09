@@ -47,24 +47,34 @@ function xorshift128Next(state) {
 }
 
 /* A single named stream: independent xorshift128 state, so it never
-   perturbs any other stream's sequence. */
-function createStream(seedNum) {
-  const state = makeState(seedNum);
+   perturbs any other stream's sequence. `resumeState`, when given, seeds
+   the stream directly from a prior snapshot instead of deriving fresh
+   state from `seedNum` -- see createRng's `resumeStreams` param. */
+function createStream(seedNum, resumeState) {
+  const state = resumeState ? resumeState.slice() : makeState(seedNum);
   return {
     nextUint32() { return xorshift128Next(state); },
     random() { return xorshift128Next(state) / 4294967296; },
     range(min, max) { return min + this.random() * (max - min); },
     int(min, max) { return Math.floor(this.range(min, max + 1)); },
     chance(p) { return this.random() < p; },
-    pick(arr) { return arr[Math.floor(this.random() * arr.length)]; }
+    pick(arr) { return arr[Math.floor(this.random() * arr.length)]; },
+    _snapshot() { return state.slice(); }
   };
 }
 
 /* Root RNG for one run. `seed` may be a string (hashed) or a number.
    Sub-streams are created lazily and cached by name, derived
    deterministically from the root seed + stream name so the same seed
-   always reproduces the same streams in the same order. */
-export function createRng(seed) {
+   always reproduces the same streams in the same order.
+
+   `resumeStreams`, when given ({name: [4 words]} from a prior
+   `snapshotStreams()`), reconstructs each named stream from its exact
+   saved position instead of deriving from the seed -- Phase 13j: a live
+   run's `runRng` is one long-lived generator whose streams keep advancing
+   across every encounter in the run, so replaying a single fight cut out
+   of that run needs the streams' actual mid-run position, not stream 0. */
+export function createRng(seed, resumeStreams) {
   const rootSeed = typeof seed === 'number' ? seed >>> 0 : hashString(String(seed));
   const streams = new Map();
   return {
@@ -73,10 +83,15 @@ export function createRng(seed) {
       let s = streams.get(name);
       if (!s) {
         const subSeed = (hashString(rootSeed + ':' + name) ^ Math.imul(hashString(name), 0x9E3779B1)) >>> 0;
-        s = createStream(subSeed);
+        s = createStream(subSeed, resumeStreams && resumeStreams[name]);
         streams.set(name, s);
       }
       return s;
+    },
+    snapshotStreams() {
+      const out = {};
+      streams.forEach((s, name) => { out[name] = s._snapshot(); });
+      return out;
     }
   };
 }
