@@ -1,1 +1,6 @@
 node_modules/
+
+# Generated QA review artifacts (contact sheets, palette reports). These are
+# rebuilt on demand by the phase-13 QA harnesses and run to several MB of
+# inlined base64 PNGs -- they are review material, not repo content.
+apps/standbattle/scripts/_qa_*.html
