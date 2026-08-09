@@ -31,6 +31,8 @@ import {
 import { createRng } from './rng.js';
 import { createInputSystem } from './input.js';
 import { mountAccessibilityBar } from './settings_panel.js';
+import { mountShell } from './shell.js';
+import { createPause } from './pause.js';
 import { challengeLoadout, dailySeedId, weeklySeedId } from './daily_seed.js';
 
 const W = 480, H = 270;
@@ -39,8 +41,13 @@ export default {
   id: 'standbattle',
   title: 'STANDBATTLE.EXE',
   icon: 'assets/images/standbattle.png',
-  width: 1000,
-  height: 620,
+  /* Sized so the 480x270 canvas gets a 3x integer blow-up (1440x810) plus
+     titlebar and appbar, with ~36x54px of slack so a taller button strip
+     can't quietly drop it back to 2x -- which is what the old 1000x620
+     floored to. createWindow clamps to the desktop, so a small screen
+     just falls back to 2x; FULL goes the other way. */
+  width: 1480,
+  height: 920,
   resizable: true,
 
   async mount(root, ctx) {
@@ -84,69 +91,26 @@ export default {
       state.scene = 'map';
     }
 
-    const pane = document.createElement('div');
-    pane.className = 'gamepane sbpane';
-    const cv = document.createElement('canvas');
-    cv.width = W; cv.height = H;
-    cv.className = 'gamecv sbcanvas';
-    cv.tabIndex = 0;
-    pane.appendChild(cv);
-
-    const bar = document.createElement('div');
-    bar.className = 'appbar';
-    const shakeBtn = document.createElement('button');
-    shakeBtn.className = 'appbtn';
-    const debugBtn = document.createElement('button');
-    debugBtn.className = 'appbtn';
-    const info = document.createElement('span');
-    info.className = 'godword sbinfo';
-    bar.appendChild(shakeBtn);
-    bar.appendChild(debugBtn);
-    bar.appendChild(info);
-
-    root.appendChild(pane);
-    root.appendChild(bar);
-
-    const g = cv.getContext('2d');
-    g.imageSmoothingEnabled = false;
-
-    /* integer scale only (§11) -- fit both axes, never a fractional blow-up */
-    function resize() {
-      const availW = Math.max(W, pane.clientWidth || W);
-      const availH = Math.max(H, pane.clientHeight || H);
-      const scale = Math.max(1, Math.floor(Math.min(availW / W, availH / H)));
-      cv.style.width = (W * scale) + 'px';
-      cv.style.height = (H * scale) + 'px';
-    }
-    const ro = new ResizeObserver(resize);
-    ro.observe(pane);
-    resize();
-
-    function updateShakeBtn() { shakeBtn.textContent = 'SHAKE: ' + (shakeEnabled ? 'ON' : 'OFF'); }
-    updateShakeBtn();
-    shakeBtn.addEventListener('mousedown', ev => {
-      ev.stopPropagation();
-      shakeEnabled = !shakeEnabled;
-      env.shakeEnabled = shakeEnabled;
-      if (state.combat) state.combat.juice.setShakeEnabled(shakeEnabled);
-      meta.shakeEnabled = shakeEnabled;
-      saveStore.saveMeta(meta);
-      updateShakeBtn();
-      if (window.Snd) window.Snd.click();
+    /* Canvas, integer scaler and button strip live in shell.js (300-line
+       cap); index.js still owns the state the toggles read. */
+    const shell = mountShell(root, W, H, {
+      getShake: () => shakeEnabled,
+      onShake: () => {
+        env.shakeEnabled = shakeEnabled = !shakeEnabled;
+        meta.shakeEnabled = shakeEnabled;
+        if (state.combat) state.combat.juice.setShakeEnabled(shakeEnabled);
+        saveStore.saveMeta(meta);
+      },
+      getDebug: () => debugEnabled,
+      onDebug: () => {
+        env.debugEnabled = debugEnabled = !debugEnabled;
+        if (state.combat) state.combat.debug = debugEnabled;
+      },
+      /* wm.js capability; guarded so a ctx predating it still runs. */
+      isFull: () => !!(ctx.isMaximized && ctx.isMaximized()),
+      onFull: () => { if (ctx.toggleMaximize) ctx.toggleMaximize(); }
     });
-
-    /* Debug overlay toggle (tech §2.4/§2.5 deliverable 8): hitboxes,
-       hurtboxes, current frame, active windows, poise, i-frames. */
-    function updateDebugBtn() { debugBtn.textContent = 'DEBUG: ' + (debugEnabled ? 'ON' : 'OFF'); }
-    updateDebugBtn();
-    debugBtn.addEventListener('mousedown', ev => {
-      ev.stopPropagation();
-      debugEnabled = !debugEnabled;
-      env.debugEnabled = debugEnabled;
-      if (state.combat) state.combat.debug = debugEnabled;
-      updateDebugBtn();
-      if (window.Snd) window.Snd.click();
-    });
+    const cv = shell.cv, g = shell.g;
 
     /* GDD §20's under-8-seconds rule lands here: `launch()` is reachable
        in one click from hub spawn and does everything a run needs -- no
@@ -170,7 +134,7 @@ export default {
        rebinding, and the Daily/Weekly challenge launchers + leaderboard,
        all split into settings_panel.js so this file stays the thin mount
        shell. */
-    const accessibilityBar = mountAccessibilityBar(bar, pane, {
+    const accessibilityBar = mountAccessibilityBar(shell.bar, shell.pane, {
       meta, saveStore, env, input, state, ctx,
       onLaunchDaily: () => { if (isHubScene(state.scene)) { launchChallenge(dailySeedId()); if (window.Snd) window.Snd.select(); } },
       onLaunchWeekly: () => { if (isHubScene(state.scene)) { launchChallenge(weeklySeedId()); if (window.Snd) window.Snd.select(); } }
@@ -189,8 +153,13 @@ export default {
       return { mx: (ev.clientX - r.left) * (W / r.width), my: (ev.clientY - r.top) * (H / r.height) };
     }
 
+    /* ABANDON settles through the same loss path a death takes -- pausing
+       must never be a cheaper way out of a fight than fighting it. */
+    const pause = createPause({ onAbandon: () => finishRunLoss(state, env) });
+
     function handleClick(ev) {
       const { mx, my } = canvasXY(ev);
+      if (pause.click(mx, my, W, H, state.scene)) return;
       if (state.scene === 'title') { state.scene = 'hub'; if (window.Snd) window.Snd.open(); }
       else if (isHubScene(state.scene)) {
         const r = hubClick(state, env, mx, my, W, H);
@@ -232,6 +201,13 @@ export default {
     }
 
     function onKey(ev, down) {
+      /* Escape opens the stop menu wherever there is a run to stop; the
+         controller decides and reports whether it took the event. */
+      if (pause.key(ev, down, state.scene)) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        return;
+      }
       /* The one-key skip (GDD §20) is checked before the input map, so it
          works on every hub screen regardless of the player's keybinds. */
       if (down && isHubScene(state.scene)) {
@@ -260,7 +236,9 @@ export default {
       if (drawHubScene(g, W, H, state, env, tsec)) { /* hub, its stations, training, TO BE CONTINUED */ }
       else if (state.scene === 'combat') {
         const c = state.combat;
-        c.update(dt);
+        /* Paused means the sim does not advance -- the frame underneath
+           still redraws, so the frozen fight is what the scrim sits on. */
+        if (!pause.isOpen()) c.update(dt);
         if (c.outcome === 'fighting') {
           const tense = c.player.hp / c.player.maxHp < 0.3 || (c.isBoss && c.enemy.phaseIndex > 0);
           musicSetIntensity(tense ? 2 : 1);
@@ -281,15 +259,18 @@ export default {
       else if (state.scene === 'title') drawTitle(g, W, H, tsec, cleared);
       else if (state.scene === 'standselect') drawStandSelect(g, W, H, tsec);
 
-      info.textContent = state.scene === 'combat'
-        ? 'A/D MOVE  W/S DEPTH  J/K/L ATTACK  SPACE STEP  SHIFT CLASH  G GUARD  U SPECIAL  I RUSH  F PROJECT'
-        : 'CLICK TO CONTINUE';
+      pause.draw(g, W, H, state.scene, tsec);
+
+      shell.setInfo(pause.isOpen() ? 'PAUSED -- ESC RESUMES'
+        : state.scene === 'combat'
+          ? 'ESC PAUSE  A/D MOVE  W/S DEPTH  J/K/L ATTACK  SPACE STEP  SHIFT CLASH  G GUARD  U SPECIAL  I RUSH  F PROJECT'
+          : 'CLICK TO CONTINUE');
     }
     raf = requestAnimationFrame(frame);
     musicStart();
     musicSetIntensity(0);
 
-    this._cleanup = () => { cancelAnimationFrame(raf); ro.disconnect(); musicStop(); accessibilityBar.destroy(); };
+    this._cleanup = () => { cancelAnimationFrame(raf); shell.destroy(); musicStop(); accessibilityBar.destroy(); };
     if (this._closed) { this._cleanup(); this._cleanup = null; }
   },
 

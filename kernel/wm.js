@@ -211,10 +211,43 @@ export function createWindow(opts) {
   document.addEventListener('mousemove', onDocMouseMove);
   document.addEventListener('mouseup', onDocMouseUp);
 
+  /* Maximize/restore -- a window-manager capability, so every app gets it
+     through ctx.toggleMaximize() rather than reaching for its own .win
+     element (apps never touch kernel DOM). The pre-maximize bounds are
+     kept verbatim so restore puts the window back exactly where the user
+     had dragged/sized it. */
+  let savedBounds = null;
+  function isMaximized() { return savedBounds !== null; }
+  function maximize() {
+    if (savedBounds) return;
+    savedBounds = {
+      left: win.style.left, top: win.style.top,
+      width: win.style.width, height: win.style.height
+    };
+    win.style.left = '0px';
+    win.style.top = '0px';
+    win.style.width = desk.clientWidth + 'px';
+    win.style.height = desk.clientHeight + 'px';
+    raise(win);
+  }
+  function restore() {
+    if (!savedBounds) return;
+    win.style.left = savedBounds.left;
+    win.style.top = savedBounds.top;
+    win.style.width = savedBounds.width;
+    win.style.height = savedBounds.height;
+    savedBounds = null;
+  }
+  function toggleMaximize() {
+    if (savedBounds) restore(); else maximize();
+    return isMaximized();
+  }
+
   raise(win);
   Snd.open();
 
-  return { win: win, body: body, title: t, btn: btn, close: closeWin };
+  return { win: win, body: body, title: t, btn: btn, close: closeWin,
+           toggleMaximize: toggleMaximize, isMaximized: isMaximized };
 }
 
 export async function openWindow(appId, args = {}) {
@@ -244,7 +277,11 @@ export async function openWindow(appId, args = {}) {
     openWindow,
     // made.close is reassigned below to call app.unmount() itself -- call
     // through it rather than unmounting here too, or ctx.close() unmounts twice.
-    close: () => { made.close(); }
+    close: () => { made.close(); },
+    // Fill the desktop / put the window back. Generic to every app so a
+    // full-screen toggle never needs kernel access from app code.
+    toggleMaximize: () => made.toggleMaximize(),
+    isMaximized: () => made.isMaximized()
   };
   
   // Override close behavior to trigger unmount

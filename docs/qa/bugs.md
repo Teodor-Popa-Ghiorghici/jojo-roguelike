@@ -2474,3 +2474,344 @@ review artifacts and the palette report, none committed.
 modified this phase (every real finding needs either a design decision
 or a content pass, both out of the S1-only fix budget — see each
 entry's Status).
+
+## Phase 13i (owner review round) — QA-079 onward
+
+The owner reviewed the contact sheets and the running build and filed the
+findings below. Everything here is logged verbatim as reported, then
+verified against the code before being written up; where the owner's
+report and the measurement disagree, the measurement is stated. Fixes
+this round were limited to the app shell and the telegraph geometry —
+the art/rig overhaul (QA-085/086/087) is a phase of its own, not a
+hardening patch.
+
+### QA-079 — S2 — fixed — the game rendered at 2x in a window sized to
+### floor the integer scaler at 2x
+
+**Repro:** open STANDBATTLE.EXE at the default window size and measure
+the canvas: `index.js`'s scaler is
+`Math.max(1, Math.floor(Math.min(availW / W, availH / H)))` over a
+480x270 internal canvas.
+
+**Symptom:** at the old `width: 1000, height: 620`, usable pane space is
+996x564 after the 2px window border, the 22px titlebar and the ~30px
+appbar — against the 1440x810 needed for 3x, so the floor landed on 2x
+(960x540) with 36x24px to spare. The owner's "the game is way too
+small" is exactly this: the window was 24 vertical pixels short of
+tripling.
+
+**Status:** fixed. `index.js`'s default window is now 1480x920 (1476x864
+usable → 3x with 36x54px of slack, so a taller button strip can't
+silently drop it back to 2x). `createWindow` still clamps to the
+desktop, so a small screen falls back to 2x rather than overflowing.
+
+### QA-080 — S2 — fixed — no way to make the window bigger than its
+### default from inside the machine
+
+**Repro:** no maximize affordance existed anywhere — `wm.js`'s titlebar
+has `[_]` (minimize) and `[X]` (close) only, and the `ctx` API handed to
+apps had no window-bounds capability at all, so an app could not resize
+its own window without reaching into kernel DOM (which the app contract
+forbids).
+
+**Status:** fixed, as a generic capability rather than an app hack.
+`wm.js`'s `createWindow` gained `maximize`/`restore`/`toggleMaximize`
+(saving the pre-maximize bounds verbatim so restore is exact), exposed
+through `ctx.toggleMaximize()`/`ctx.isMaximized()` — available to every
+app, not just this one. `standbattle`'s appbar gained a FULL/WINDOW
+button that calls it; the scaler recomputes off the new pane size, so
+filling the desktop buys another integer step.
+
+### QA-081 — S2 — fixed — no pause menu; a fight had no stop, and
+### quitting one meant closing the window
+
+**Repro:** during combat, press every key. `input.js`'s `ACTIONS` are
+all combat verbs; `Escape` is only consumed by hub scenes
+(`index.js`'s `hubKey` path, raw `ev.code`). In combat nothing consumed
+it, so there was no pause, no way to review controls mid-fight, and no
+exit but win/lose/`flee` — and QA-063 showed `flee` can be rebound to
+nothing.
+
+**Status:** fixed. New `pause.js` (`createPause`) owns the open state,
+the selection, and every input path into it; `Escape` opens it on any
+non-hub, non-title scene, checked ahead of the input map so a rebound or
+unbound keymap can never take the stop menu away. The sim does not step
+while it is open (`index.js`'s `if (!pause.isOpen()) c.update(dt)`), so
+the frozen frame underneath is the pause. Deliberately **not** an escape
+hatch: ABANDON RUN settles through the same `finishRunLoss` path a death
+takes, so pausing is never cheaper than fighting, and the menu does not
+offer "quit to hub with the run intact" — that would have sold the
+save-scum that closing the window already allows (map checkpoint on
+disk, combat state never persisted). Combat also gets the control list
+in the panel, which is where the owner's "hud is very hard to read"
+complaint is partly answered pending QA-084.
+
+### QA-082 — S2 — FIXED THIS ROUND (see phase report) — no attack
+### telegraph in the game matches the hitbox that resolves it
+
+**Repro:** `createCombat(ENEMIES.morioh_thug, [], {shakeEnabled:false},
+createRng('qa-telegraph-geom-001'))`; set `enemies[0].ai.patternIds =
+[id]`, `ai.approachRange = 10000`, `speedPxPerFrame = 0`; each frame
+before `combat.step()` pin `enemy.x/z = (300,130)` and
+`player.x/z = (300+dx, 130+dz)`; watch `player.hp`. Frames are byte-
+stable across runs.
+
+**Symptom:** the sim has exactly three hit geometries — melee AABB
+(`hitbox.js:27-34`, forward-facing box, `|Δz| <= 22`), projectile point
+(`hitbox.js:40-43`, `|Δx| <= 25` and `|Δz| <= 10` at a `pr.z` fixed at
+spawn and never advanced), and hazard zone (`hazards.js:55-56`,
+genuinely radial `hypot <= radius`). The single renderer
+`telegraphOne()` (`arena.js:131-153`) drew, for every pattern regardless
+of type, a ground ellipse + ring of x-radius `pattern.range*(0.4+k*0.6)`
+and y-radius `pattern.range*0.14+3` centred on the attacker. **Zero of
+16 patterns matched.** Two directions, the first being the fairness
+violation:
+
+- **Melee under-warns forward on every windup frame.** Ring peaks at
+  ~0.97*`range` and averages ~0.70*`range`; real forward reach is
+  `range+15` (User) / `range+37` (User+Stand pair, `stand_classes.js:
+  44,47`). Frames on which the drawn ring reaches the real reach: **0
+  of N, for all 8 melee patterns.** Live: `sweep` connects at dx=121
+  against a ring drawn at 81.5 max; `the_world_time_stop` at dx=137
+  against 100.
+- **Hazard zones under-warn in both axes.** `arena.js:189` drew
+  `radius*0.7` in x and `0.55*radius+7.5` in z against a true radial
+  test — 66-74% coverage, so the real danger *area* is ~2.0x the drawn
+  area, an invisible annulus all the way round. Live (`bomb_plant`,
+  r55): dz=54 HITs while the drawn ellipse ends at z≈37.8; dx=38,dz=38
+  (hypot 53.7) HITs and is not drawn.
+- **Ranged over-warns catastrophically in depth** (owner's claim (b),
+  confirmed and worse than reported): drawn depth is 12.65x-16.85x the
+  real ±10 band, and for 5 patterns the drawn ellipse is *deeper than
+  the entire 180-unit belt* (147-187%) — it paints the whole arena
+  lethal when a 20-unit lane is. Root cause is documented but not
+  honoured: `ai.js:20-23` says ranged `range` is "only an AI
+  pattern-selection distance heuristic"; `arena.js:138` read it as a
+  radius.
+- **Melee draws a symmetric circle for a forward-only box** (owner's
+  claim (a)): the entire rear half is false danger. Note the owner's
+  premise is half-right — the *visual* reads as radial, but the hitbox
+  is a forward AABB, so the answer to "does the hitbox respect the
+  visual" is **no**. Making slam genuinely radial is a gameplay change,
+  logged separately as QA-088.
+
+**Also found:** `the_world_time_stop.hazard` is unreachable dead data —
+`spawnHazard` is only called from the projectile-timeout branch
+(`combat_enemy.js:138`) and this is a melee pattern (S3). And
+`telegraphOne` early-returns unless `ai.state === 'windup'`
+(`arena.js:134`), so on the exact frame a melee hit resolves there is
+zero telegraph geometry on screen.
+
+**Process gap (S2):** nothing anywhere ties telegraph geometry to hitbox
+geometry. `npm run assert`'s "telegraph fairness floor (>=260ms)" is
+time-only — `fairness_check.js:20` is
+`p.windupFrames * frameMs >= MIN_TELEGRAPH_MS`, and neither it nor
+`checkTelegraphFairnessAtMenace` reads `pattern.hitbox`, `pattern.range`
+or `pattern.hazard`. `content_registry.js` does not validate `PATTERNS`
+at all. One could set `hitbox.w = 400` on `quick_stab` and every check
+would still pass.
+
+**Status:** fixed this round in the render layer only — the sim's
+geometry is correct and unchanged; the drawing was the thing lying. See
+the phase report for the drawn-vs-real numbers.
+
+### QA-083 — S2 (arguably S1) — logged, not fixed — no enemy in the
+### game can move in z, so holding one key is permanent invulnerability
+
+**Repro:** any encounter; hold `back` (`S`/`ArrowDown`) to z=220 and
+stand still. Measured over 5400 frames (90s) against 11 targets.
+
+**Symptom:** no enemy AI ever writes `z` — not one type, not one boss,
+not one profile. Every movement branch in `combat_enemy.js` writes `x`
+only: knockback integration (`:65`), bounds clamp (`:66`, and no z clamp
+exists), `flee` (`:85-90`), `approach` (`:91-97`), projectile travel
+(`:124-143`, `pr.z` fixed at spawn). `ai.js`'s `stepEnemyAI`
+(`:226-271`) is a pure state machine with no position writes; all six
+profiles (`profiles.js:18-25`) only weight attack-token eligibility.
+Verified empirically across all 28 enemy types and bosses with the
+player oscillating in both axes to bait a depth response: **maxΔz = 0
+for all 28.**
+
+Hit resolution is depth-gated (melee ±22, ranged ±10 — `hitbox.js:
+10-11`). Enemies are frozen at z ∈ {104…156}; the player has the full
+40…220 range (`stand_classes.js:26-38`, 180 units of travel). So a
+player at z=220 is at least 64 units from the nearest enemy —
+permanently outside every hitbox in the game, with no AI able to follow.
+Measured: **0 damage taken, indefinitely, from 11/11 targets including
+Killer Queen, DIO and Pucci**, and from both crowd encounters tested. It
+is a stalemate rather than a free win (the player's hitboxes are
+depth-gated too), but any player-side ranged or hazard damage converts
+it into a risk-free kill.
+
+Spawn nuance: `encounter.js:46-48`'s `SPAWN_Z_OFFSETS = [0,-26,26,-13,
+13]` gives crowds 5 discrete z lines, but **every boss and every
+single-enemy/elite node is spawn index 0 → z = 130 exactly**, so a 1v1
+has no depth variation at all. Summons and clones inherit z verbatim
+(`summons.js:61`, `affixes.js:116`).
+
+Two secondary consequences of the same root cause: the `flanker` profile
+is dead logic (`profiles.js:50` grants `flankBonus` at `|Δz| > 20`, a
+condition the enemy can never create), and Shielder's designed
+counterplay is a 2-unit window (`data_enemies.js:106` says it "must be
+flanked (z-offset) or poise-broken"; `resolvers.js:162-165` zeroes
+damage at `|Δz| <= 20` while the melee hitbox stops overlapping past
+`|Δz| > 22`, and the player crosses 2.87 units per frame) — poise-break
+still works, so it is not unkillable.
+
+**Status:** not fixed. Giving 28 enemies depth-tracking movement is a
+gameplay/AI feature that re-balances every encounter in the game, not a
+hardening patch — it is the single highest-priority item for the next
+gameplay phase. Severity is S2 by this ledger's letter (not run-ending)
+but it invalidates all combat, so treat it as the top of the queue.
+
+**Adjacent, flagged not acted on:** `forward` (`W`/`ArrowUp`) is
+`dz -= 1` (`stand_classes.js:30`), and `zToYOffset` maps lower z to a
+*larger* screen y — so Up moves the character *down* the screen, Down
+moves them up. Inverted against the beat-'em-up convention, and it is
+what makes QA-084's symptom reachable by pressing Down. BALANCE/design
+call, not a defect.
+
+### QA-084 — S2 — logged, not fixed (owner decision needed) — the far
+### half of the walkable plane has no ground under it
+
+**Repro:** hold `back` to z=220 in any arena.
+
+**Symptom:** feet-y is `GROUND_Y + zToYOffset(z)` with `GROUND_Y = 208`
+(`constants.js:29`) and `zToYOffset(z) = round((130 - z) * 0.4)`
+(`render_adapter.js:27,34-37`), so the projected feet band is
+**172…244**. `buildGround` (`bg_scenes.js:165-198`) starts with
+`px(g, 0, groundY, W, H - groundY, ...)` at `:167` — the ground plane
+begins exactly at y=208 and fills downward, in every scene, with no
+per-scene variation. Ground band 208…270 (62px) vs. projected feet band
+172…244 (72px), centred on the horizon instead of sitting below it:
+**36px of overshoot, uniform across all 13 scenes**, and feet cross
+above the horizon at any z > 130, i.e. **89 of 181 world units (49.2%)
+of the legal depth range is unsupported.**
+
+Rasterizing the actual layer buffers for what the character stands in at
+y=172: **store 100%** coverage (standing inside the shopfront glass,
+`bg_scenes.js:107`, 12px above its own base), **alley 95.7%** (bare
+brick, `bg_scenes.js:21-29` — the owner's "walking in the wall",
+literally), **street 96.4%** (on top of the awnings, `bg_scenes.js:153`),
+**park 7.1%** (a different symptom — floating 8px above the fence top,
+`bg_scenes.js:95`, reads as levitating rather than clipping).
+
+**Status:** not fixed — needs an owner call, because no available fix is
+visually neutral. Options, with the measurement behind each:
+- **(A, recommended)** pass `GROUND_Y - 36` as the `groundY` argument at
+  the two backdrop call sites (`render.js:194` `drawBackground`,
+  `render.js:227` `drawForeground`). `GROUND_Y` itself stays 208, so
+  every sprite/effect/telegraph/hazard y is untouched; ground band
+  becomes 172…270 and near-layer scenery baselines at the far edge of
+  the walkable plane, which is the correct 2.5D composition. Verified:
+  **0px of art pushed off-canvas in any of the 13 scenes.** But it
+  reframes every arena — topmost near-layer row before→after: store
+  44→8 (loses most of its upper framing), street 90→54, park 81→45,
+  alley unchanged at 30 but its wall shortens 146→110px. That is an
+  art-direction change needing the owner's eye, and it cuts against
+  `scene_defs.js:1-8`'s stated discipline ("a new Act gets a new mood
+  via colour data, never new backdrop geometry code").
+- **(fallback)** a per-`kind` horizon offset in `scene_defs.js` — data,
+  not geometry, so it honours that discipline and lets each arena absorb
+  the 36px differently.
+- **(B)** remap `zToYOffset` into the existing band — pure render layer,
+  one function, but breaks the documented `zToYOffset(Z_REST) === 0`
+  contract (`render_adapter.js:16-17`, `arena_bounds.js:10-11`), moves
+  every fighter's rest position down 31px and compresses depth travel
+  72→54px. A resolver rewrite, not an additive change.
+- **(C)** extending only the ground layer upward is not viable — ground
+  draws *after* `near` (`background.js:102`), so a 36px apron buries the
+  shopfront bases, awnings and plinths (96-100% near coverage in that
+  band for three of four kinds).
+
+Worth deciding **after** QA-083: if the depth axis gets clamped, or the
+AI gains z-movement, the required ground coverage changes.
+
+### QA-085 — S2 — logged, not fixed — every Stand, Stand user and enemy
+### reuses one of three sprites
+
+**Owner's words:** "The character models are reused. This is
+unacceptable. Each stand, each stand user, each enemy type should have
+its own design based on how they look in JoJo's Bizarre Adventure."
+
+Confirmed and quantified in QA-073/QA-074 above (7 of 8 playable Stands
+render as Star Platinum once manifested; 9 of 10 bosses and all 14
+tinted crowd types render as `drawThug`; five tint groups are pixel-
+identical to each other). Consolidated here as the owner's own filing so
+the art phase has one entry to work from.
+
+**Status:** not fixed — this is ~33 bespoke character designs. It is a
+content/art phase, not a hardening patch.
+
+### QA-086 — S2 — logged, not fixed — the character rig reads as
+### unnatural, and the faces as doodles
+
+**Owner's words:** "The design of the characters is subpar. The pose
+itself is unnatural and limb movement looks very unnatural and forced.
+The faces look like doodles instead of the iconic JoJo design style with
+clear shapes and outlines. They do not look serious, they do not look
+polished."
+
+**Status:** not fixed, and deliberately not attempted. This is a rewrite
+of `body.js` (the FK humanoid rig), `face.js`, `anim.js` and
+`pose_player.js`/`pose_enemy.js` — the pose engine itself, not its
+callers. Half-rewriting a character rig during a hardening phase is
+exactly the destabilization this phase exists to avoid. Scope it as its
+own phase with reference art per character; it pairs naturally with
+QA-085 since new sprites and a new rig want to be authored together.
+
+### QA-087 — S2 — logged, not fixed — hits have no impact, given or
+### taken
+
+**Owner's words:** "Attacks both given and taken feel like they have no
+impact."
+
+**Status:** not fixed. The mechanisms all exist and are individually
+healthy — hit-stop (`juice.js`, spec §10's 3-5 frame light / 8 frame
+heavy window), directional whole-pixel shake (`juice.js:60-61`,
+verified in QA-067), the capped particle burst (verified in QA-069), the
+3-layer hit sound (`audio.js`), squash/stretch (`layer.js`) — so this is
+a tuning-and-layering problem across all of them, plus spec §10's "juice
+budget rule" (reserve the largest responses for crits, parries, boss
+staggers and finishers; uniform juice on every hit reads as noise). That
+is a feel pass with a human in the loop on every number, not a defect
+with a repro. Pairs with QA-086 — impact reads through the rig as much
+as through the effects.
+
+### QA-088 — BALANCE — logged, not acted on — should slam-type melee be
+### genuinely radial?
+
+**Owner's words:** "Some attacks like Ground slam should hit anything in
+a circle around them, not just left to right."
+
+The measurement (QA-082) answers the factual half: slam-type patterns
+are forward-facing AABBs, and the circular telegraph was lying about it.
+This round fixed the *lie*. Making the *hitbox* radial is a separate,
+genuine design change — it would alter the threat profile of all six
+chevron patterns (`telegraphed_slam`, `shield_advance`,
+`highway_star_dash`, `the_world_time_stop`, `king_crimson_erase`,
+`made_in_heaven_acceleration`), invalidate the encounter-composition
+assertions' tuning, and interact directly with QA-083 (a radial slam is
+the natural counter to depth-camping).
+
+**Status:** not acted on — a gameplay decision for the owner, best taken
+together with QA-083 since they are the same question from two sides.
+
+### QA-089 — S3 — logged, not fixed — very powerful attacks are
+### distinguished by colour alone
+
+**Owner's words:** "When it comes to very powerful attacks, the
+telegraph should also have a texture, not just a color."
+
+Confirmed: `telegraphOne` (`arena.js:131-153`) varies only
+`pattern.telegraph` (a flat hex) and the glyph shape; there is no
+texture, hatch or fill-pattern channel, so a heavy and a light read
+identically to anyone who can't separate the two hues — and QA-077
+already found one pattern reusing plain UI white. `draw.js` has
+`dither()` (`draw.js:175`), which is the right primitive for this and is
+already used elsewhere, so it is a bounded addition rather than new
+machinery.
+
+**Status:** not fixed this round — the telegraph geometry rewrite
+(QA-082) landed first and a texture channel should be authored on top of
+the corrected shapes, not the old ones. Next telegraph pass.
