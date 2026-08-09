@@ -2612,8 +2612,53 @@ at all. One could set `hitbox.w = 400` on `quick_stab` and every check
 would still pass.
 
 **Status:** fixed this round in the render layer only — the sim's
-geometry is correct and unchanged; the drawing was the thing lying. See
-the phase report for the drawn-vs-real numbers.
+geometry is correct and unchanged; the drawing was the thing lying.
+
+New `telegraph_geom.js` derives each footprint from the same numbers the
+hit test resolves with, *importing* the tolerances
+(`hitbox.js`'s `depthToleranceFor`, `stand_classes.js`'s
+`ANCHOR_OFFSET_PX`) rather than restating them so they cannot drift.
+`arena.js:135`'s `telegraphOne` dispatches to it and `:200`'s
+`hazardZones` paints through it. Key call: the windup now animates the
+*fill* sweeping out from the attacker, not the boundary — the sim's
+hitbox doesn't grow during a windup either — so the drawn edge is exact
+on **every** windup frame, turning the measured 0-of-N into N-of-N.
+Melee holds its footprint through the active window with a fade, so the
+frame the AABB resolves is no longer blank. Colour, glyph, pulse and the
+k>0.55 label are untouched.
+
+Drawn vs. real at the last windup frame (world units):
+
+| pattern | axis | OLD | NEW | REAL |
+|---|---|---|---|---|
+| `sweep` | fwd / rear / depth± | 81.5 / −81.5 / 36.9 | **99 / −15 / 22.5** | 99 / −15 / 22 |
+| `telegraphed_slam` | fwd / rear / depth± | 72.8 / −72.8 / 33.4 | **89 / −15 / 22.5** | 89 / −15 / 22 |
+| `the_world_time_stop` | fwd / depth± | 97.9 / 42.5 | **115 / 22.5** | 115 / 22 |
+| `projectile` | length / depth± | 387.4 / 147.5 | **421 / 10** | 421 / 10 |
+| `sniper_shot` | length / depth± | 414.5 / 154.5 | **372 / 10** | 371.7 / 10 |
+| `bomb_plant` | length / depth± / zone | 88.2 / 39 / *undrawn* | **45 / 10 / r55** | 45 / 10 / r55 |
+| hazard r55 | x / z radius | 38.5 / 37.8 | **55 / 55** | 55 / 55 |
+| hazard r70 | x / z radius | 49 / 46 | **70 / 70** | 70 / 70 |
+
+Nothing under-warns; over-warn is bounded at +0.5 depth (rounding pixel
+rows outward) and +0.3 on `sniper_shot`'s head.
+
+**Process gap closed:** new
+`apps/standbattle/scripts/qa_telegraph_geometry.js` brute-force probes
+the *real* predicates (`overlaps`, `pointOverlaps`, the projectile
+advance loop, the radial hypot at 64 angles) against the pixels the
+rasterizer is handed, and is wired into `npm run assert` — so the
+time-only fairness floor is no longer the only telegraph guard.
+Independently verified to catch a regression: reintroducing the exact
+defect that was shipping (melee reach at 0.85×) fails the assertion with
+per-pattern drawn-vs-real numbers and exit 1.
+
+**Deliberately not done:** homing lanes (`sheer_heart_attack`,
+`emperor_curveshot`) draw forward-only — homing flips x, never z, so the
+load-bearing ±10 lane depth is still exact. Melee patterns carrying an
+inert `hazard` field get no zone pre-draw, since that field never fires
+for melee (see the dead-data note above) and drawing it would be false
+danger.
 
 ### QA-083 — S2 (arguably S1) — logged, not fixed — no enemy in the
 ### game can move in z, so holding one key is permanent invulnerability
